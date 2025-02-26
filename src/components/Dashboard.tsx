@@ -59,7 +59,7 @@ type Transaction = {
   description?: string;
   created_at: string;
   user_id: string;
-  is_completed: boolean; // Novo campo
+  is_completed: boolean;
 };
 
 type TransactionsData = {
@@ -102,7 +102,7 @@ export function Dashboard() {
     category: '',
     amount: ''
   });
-
+  
   // Verificar se o usuário está autenticado
   useEffect(() => {
     const checkUser = async () => {
@@ -116,7 +116,7 @@ export function Dashboard() {
     checkUser();
   }, []);
 
-  // Memoize a função fetchData
+  // Função para buscar dados
   const fetchData = useCallback(async () => {
     if (!userId) return;
     
@@ -182,22 +182,46 @@ export function Dashboard() {
     }
   }, [userId, selectedYear, selectedMonth]);
 
-  // Buscar dados com base na seleção de ano e mês
+  // Buscar dados quando usuário, ano ou mês mudarem
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (userId) {
+      fetchData();
+    }
+  }, [fetchData, userId]);
 
-  // Inscreve-se para receber notificações de eventos de transações
+  // Inscrever para eventos de transação
   useEffect(() => {
     const unsubscribe = transactionEvents.subscribe(() => {
       fetchData();
     });
     
-    // Cancela a inscrição ao desmontar o componente
     return () => {
       unsubscribe();
     };
   }, [fetchData]);
+
+  // Configurar inscrição para mudanças em tempo real
+  useEffect(() => {
+    if (!userId) return;
+    
+    // Inscrever-se para atualizações em tempo real da tabela de transações
+    const subscription = supabase
+      .channel('transactions_changes')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'transactions',
+        filter: `user_id=eq.${userId}`
+      }, () => {
+        fetchData();
+      })
+      .subscribe();
+    
+    // Limpar inscrição ao desmontar
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [userId, fetchData]);
 
   const handleCardClick = (type: string) => {
     if (type !== 'saldo') {
@@ -223,6 +247,27 @@ export function Dashboard() {
 
   const toggleTransactionStatus = async (transaction: Transaction) => {
     try {
+      setIsProcessing(true);
+      
+      // Aplicar a atualização otimista no estado local
+      // Primeiro, vamos criar uma cópia profunda dos dados de transações
+      const updatedTransactionsData = { ...transactionsData };
+      
+      // Encontrar e atualizar a transação no estado local
+      const transactionType = transaction.type as keyof TransactionsData;
+      const transactionIndex = updatedTransactionsData[transactionType].findIndex(t => t.id === transaction.id);
+      
+      if (transactionIndex !== -1) {
+        updatedTransactionsData[transactionType][transactionIndex] = {
+          ...transaction,
+          is_completed: !transaction.is_completed
+        };
+        
+        // Atualizar o estado imediatamente para uma resposta rápida na UI
+        setTransactionsData(updatedTransactionsData);
+      }
+      
+      // Enviar a atualização para o servidor
       const { error } = await supabase
         .from('transactions')
         .update({ is_completed: !transaction.is_completed })
@@ -236,6 +281,9 @@ export function Dashboard() {
           description: "Não foi possível atualizar o status da transação.",
           variant: "destructive"
         });
+        
+        // Reverter a atualização otimista em caso de erro
+        fetchData();
         return;
       }
       
@@ -243,9 +291,9 @@ export function Dashboard() {
         title: "Sucesso",
         description: `Transação marcada como ${!transaction.is_completed ? 'concluída' : 'pendente'}!`
       });
-  
-      // Recarregar os dados do banco de dados
-      await fetchData();
+      
+      // Recarregar os dados do banco de dados para garantir sincronização
+      fetchData();
     } catch (err) {
       console.error('Erro ao processar atualização de status:', err);
       toast({
@@ -253,6 +301,11 @@ export function Dashboard() {
         description: "Ocorreu um erro ao processar sua solicitação.",
         variant: "destructive"
       });
+      
+      // Recarregar os dados em caso de erro
+      fetchData();
+    } finally {
+      setIsProcessing(false);
     }
   };
   
@@ -271,9 +324,50 @@ export function Dashboard() {
           description: "Por favor, insira um valor válido.",
           variant: "destructive"
         });
+        setIsProcessing(false);
         return;
       }
       
+      // Aplicar atualização otimista no estado local
+      const updatedTransactionsData = { ...transactionsData };
+      const transactionType = selectedTransaction.type as keyof TransactionsData;
+      const transactionIndex = updatedTransactionsData[transactionType].findIndex(
+        t => t.id === selectedTransaction.id
+      );
+      
+      if (transactionIndex !== -1) {
+        updatedTransactionsData[transactionType][transactionIndex] = {
+          ...selectedTransaction,
+          description: editFormData.description,
+          category: editFormData.category,
+          amount: amount
+        };
+        
+        // Atualizar o estado imediatamente
+        setTransactionsData(updatedTransactionsData);
+        
+        // Recalcular resumo
+        let totalReceita = 0;
+        let totalDespesa = 0;
+        let totalInvestimento = 0;
+        
+        Object.keys(updatedTransactionsData).forEach(type => {
+          updatedTransactionsData[type as keyof TransactionsData].forEach(t => {
+            if (type === 'receita') totalReceita += t.amount;
+            else if (type === 'despesa') totalDespesa += t.amount;
+            else if (type === 'investimento') totalInvestimento += t.amount;
+          });
+        });
+        
+        setSummaryData({
+          receita: totalReceita,
+          despesa: totalDespesa,
+          investimento: totalInvestimento,
+          saldo: totalReceita - totalDespesa - totalInvestimento
+        });
+      }
+      
+      // Enviar atualização para o servidor
       const { error } = await supabase
         .from('transactions')
         .update({
@@ -291,6 +385,9 @@ export function Dashboard() {
           description: "Não foi possível atualizar a transação.",
           variant: "destructive"
         });
+        
+        // Reverter mudanças em caso de erro
+        fetchData();
         return;
       }
       
@@ -299,7 +396,7 @@ export function Dashboard() {
         description: "Transação atualizada com sucesso!"
       });
       
-      // Atualizar os dados após a edição
+      // Recarregar dados para garantir sincronização
       await fetchData();
       
       // Fechar o diálogo
@@ -311,6 +408,9 @@ export function Dashboard() {
         description: "Ocorreu um erro ao processar sua solicitação.",
         variant: "destructive"
       });
+      
+      // Recarregar em caso de erro
+      fetchData();
     } finally {
       setIsProcessing(false);
     }
@@ -322,6 +422,37 @@ export function Dashboard() {
     setIsProcessing(true);
     
     try {
+      // Aplicar exclusão otimista no estado local
+      const updatedTransactionsData = { ...transactionsData };
+      const transactionType = selectedTransaction.type as keyof TransactionsData;
+      updatedTransactionsData[transactionType] = updatedTransactionsData[transactionType].filter(
+        t => t.id !== selectedTransaction.id
+      );
+      
+      // Atualizar o estado imediatamente
+      setTransactionsData(updatedTransactionsData);
+      
+      // Recalcular resumo
+      let totalReceita = 0;
+      let totalDespesa = 0;
+      let totalInvestimento = 0;
+      
+      Object.keys(updatedTransactionsData).forEach(type => {
+        updatedTransactionsData[type as keyof TransactionsData].forEach(t => {
+          if (type === 'receita') totalReceita += t.amount;
+          else if (type === 'despesa') totalDespesa += t.amount;
+          else if (type === 'investimento') totalInvestimento += t.amount;
+        });
+      });
+      
+      setSummaryData({
+        receita: totalReceita,
+        despesa: totalDespesa,
+        investimento: totalInvestimento,
+        saldo: totalReceita - totalDespesa - totalInvestimento
+      });
+      
+      // Enviar exclusão para o servidor
       const { error } = await supabase
         .from('transactions')
         .delete()
@@ -335,6 +466,9 @@ export function Dashboard() {
           description: "Não foi possível excluir a transação.",
           variant: "destructive"
         });
+        
+        // Reverter mudanças em caso de erro
+        fetchData();
         return;
       }
       
@@ -343,7 +477,7 @@ export function Dashboard() {
         description: "Transação excluída com sucesso!"
       });
   
-      // Recarregar os dados do banco de dados
+      // Recarregar dados para garantir sincronização
       await fetchData();
   
       // Fechar o diálogo
@@ -355,6 +489,9 @@ export function Dashboard() {
         description: "Ocorreu um erro ao processar sua solicitação.",
         variant: "destructive"
       });
+      
+      // Recarregar em caso de erro
+      fetchData();
     } finally {
       setIsProcessing(false);
     }
