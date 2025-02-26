@@ -100,18 +100,6 @@ export function Dashboard() {
     category: '',
     amount: ''
   });
-  
-  useEffect(() => {
-    // Inscreve-se para receber notificações
-    const unsubscribe = transactionEvents.subscribe(() => {
-      fetchData();
-    });
-    
-    // Cancela a inscrição ao desmontar o componente
-    return () => {
-      unsubscribe();
-    };
-  }, [fetchData]);
 
   // Verificar se o usuário está autenticado
   useEffect(() => {
@@ -131,34 +119,24 @@ export function Dashboard() {
     fetchData();
   }, [userId, selectedYear, selectedMonth]);
 
-    const fetchData = useCallback(async () => {
-      if (!userId) return;
-      
-      setIsLoading(true);
-      
-      try {
-        // Buscar todas as transações do mês e ano selecionados
-        const { data, error } = await supabase
-          .from('transactions')
-          .select('*')
-          .eq('user_id', userId)
-          .eq('year', selectedYear)
-          .eq('month', selectedMonth);
-          
-        if (error) {
-          console.error('Erro ao buscar transações:', error);
-          return;
-        }
-  
-        // Processar os dados conforme necessário
-        console.log(data);
+  const fetchData = async () => {
+    if (!userId) return;
+    
+    setIsLoading(true);
+    
+    try {
+      // Buscar todas as transações do mês e ano selecionados
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('year', selectedYear)
+        .eq('month', selectedMonth);
         
-      } catch (err) {
-        console.error('Erro inesperado:', err);
-      } finally {
-        setIsLoading(false);
+      if (error) {
+        console.error('Erro ao buscar transações:', error);
+        return;
       }
-  }, [userId, selectedYear, selectedMonth]);
       
       // Organizar transações por tipo
       const transactionsByType: TransactionsData = {
