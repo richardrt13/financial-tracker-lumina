@@ -131,25 +131,34 @@ export function Dashboard() {
     fetchData();
   }, [userId, selectedYear, selectedMonth]);
 
-  const fetchData = useCallback(async () => {
-    if (!userId) return;
-  }, [userId, selectedYear, selectedMonth]);
-    
-    setIsLoading(true);
-    
-    try {
-      // Buscar todas as transações do mês e ano selecionados
-      const { data, error } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('year', selectedYear)
-        .eq('month', selectedMonth);
+    const fetchData = useCallback(async () => {
+      if (!userId) return;
+      
+      setIsLoading(true);
+      
+      try {
+        // Buscar todas as transações do mês e ano selecionados
+        const { data, error } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('year', selectedYear)
+          .eq('month', selectedMonth);
+          
+        if (error) {
+          console.error('Erro ao buscar transações:', error);
+          return;
+        }
+  
+        // Processar os dados conforme necessário
+        console.log(data);
         
-      if (error) {
-        console.error('Erro ao buscar transações:', error);
-        return;
+      } catch (err) {
+        console.error('Erro inesperado:', err);
+      } finally {
+        setIsLoading(false);
       }
+  }, [userId, selectedYear, selectedMonth]);
       
       // Organizar transações por tipo
       const transactionsByType: TransactionsData = {
