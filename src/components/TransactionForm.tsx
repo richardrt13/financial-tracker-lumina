@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { Plus } from "lucide-react";
 import { supabase } from '@/lib/supabase'; // Importe o cliente do Supabase
+import { transactionEvents } from '@/lib/transactionEvents';
 import { toast } from "@/components/ui/use-toast"; // Opcional: para notificações
 import {
   Form,
@@ -183,7 +184,7 @@ export function TransactionForm() {
         category: "",
         amount: 0,
       });
-      
+      transactionEvents.notify();
       toast({
         title: "Sucesso",
         description: "Transação adicionada com sucesso!",
