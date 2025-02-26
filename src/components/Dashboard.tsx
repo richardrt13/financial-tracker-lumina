@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { transactionEvents } from '@/lib/transactionEvents';
 import {
   Card,
   CardContent,
