@@ -100,6 +100,18 @@ export function Dashboard() {
     category: '',
     amount: ''
   });
+  
+  useEffect(() => {
+    // Inscreve-se para receber notificações
+    const unsubscribe = transactionEvents.subscribe(() => {
+      fetchData();
+    });
+    
+    // Cancela a inscrição ao desmontar o componente
+    return () => {
+      unsubscribe();
+    };
+  }, [fetchData]);
 
   // Verificar se o usuário está autenticado
   useEffect(() => {
@@ -119,8 +131,9 @@ export function Dashboard() {
     fetchData();
   }, [userId, selectedYear, selectedMonth]);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!userId) return;
+}, [userId, selectedYear, selectedMonth]);
     
     setIsLoading(true);
     
