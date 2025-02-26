@@ -133,7 +133,7 @@ export function Dashboard() {
 
   const fetchData = useCallback(async () => {
     if (!userId) return;
-}, [userId, selectedYear, selectedMonth]);
+  }, [userId, selectedYear, selectedMonth]);
     
     setIsLoading(true);
     
