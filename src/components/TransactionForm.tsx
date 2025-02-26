@@ -169,7 +169,7 @@ export function TransactionForm() {
         console.error('Erro ao adicionar transação:', error);
         toast({
           title: "Erro",
-          description: "Não foi possível salvar a transação. Tente novamente mais tarde.",
+          description: error.message || "Não foi possível salvar a transação. Tente novamente mais tarde.",
           variant: "destructive"
         });
         return;
