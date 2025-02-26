@@ -1,5 +1,5 @@
-
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase'; // Importe o cliente Supabase
 import {
   Card,
   CardContent,
@@ -20,6 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Loader2 } from "lucide-react";
 
 const summaryCards = [
   { title: "Receitas", type: "receita", color: "text-green-600" },
@@ -34,41 +35,143 @@ const months = [
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
 
+type Transaction = {
+  id: number;
+  year: string;
+  month: string;
+  type: string;
+  category: string;
+  amount: number;
+  description?: string;
+  created_at: string;
+};
+
+type TransactionsData = {
+  receita: Transaction[];
+  despesa: Transaction[];
+  investimento: Transaction[];
+};
+
+type SummaryData = {
+  receita: number;
+  despesa: number;
+  investimento: number;
+  saldo: number;
+};
+
 export function Dashboard() {
   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
   const [selectedMonth, setSelectedMonth] = useState(months[new Date().getMonth()]);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [summaryData, setSummaryData] = useState<SummaryData>({
+    receita: 0,
+    despesa: 0,
+    investimento: 0,
+    saldo: 0,
+  });
+  const [transactionsData, setTransactionsData] = useState<TransactionsData>({
+    receita: [],
+    despesa: [],
+    investimento: [],
+  });
+  const [userId, setUserId] = useState<string | null>(null);
 
-  // TODO: Implementar integração com Supabase para buscar os dados reais
-  const mockData = {
-    receita: 5000,
-    despesa: 3000,
-    investimento: 1000,
-    saldo: 1000,
-  };
+  // Verificar se o usuário está autenticado
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        setUserId(session.user.id);
+      }
+    };
+    
+    checkUser();
+  }, []);
 
-  // TODO: Implementar integração com Supabase para buscar as transações
-  const mockTransactions = {
-    receita: [
-      { id: 1, description: "Salário", amount: 4000, category: "Salário", date: "2024-03-15" },
-      { id: 2, description: "Freelance", amount: 1000, category: "Freelance", date: "2024-03-20" },
-    ],
-    despesa: [
-      { id: 3, description: "Aluguel", amount: 2000, category: "Moradia", date: "2024-03-05" },
-      { id: 4, description: "Mercado", amount: 1000, category: "Alimentação", date: "2024-03-10" },
-    ],
-    investimento: [
-      { id: 5, description: "Tesouro Direto", amount: 500, category: "Renda Fixa", date: "2024-03-01" },
-      { id: 6, description: "Ações", amount: 500, category: "Ações", date: "2024-03-01" },
-    ],
-  };
+  // Buscar dados com base na seleção de ano e mês
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!userId) return;
+      
+      setIsLoading(true);
+      
+      try {
+        // Buscar todas as transações do mês e ano selecionados
+        const { data, error } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('year', selectedYear)
+          .eq('month', selectedMonth);
+          
+        if (error) {
+          console.error('Erro ao buscar transações:', error);
+          return;
+        }
+        
+        // Organizar transações por tipo
+        const transactionsByType: TransactionsData = {
+          receita: [],
+          despesa: [],
+          investimento: [],
+        };
+        
+        // Calcular valores totais
+        let totalReceita = 0;
+        let totalDespesa = 0;
+        let totalInvestimento = 0;
+        
+        data.forEach((transaction: Transaction) => {
+          // Adicionar à lista do tipo correspondente
+          if (transaction.type === 'receita' || transaction.type === 'despesa' || transaction.type === 'investimento') {
+            transactionsByType[transaction.type as keyof TransactionsData].push(transaction);
+          }
+          
+          // Somar aos totais
+          if (transaction.type === 'receita') {
+            totalReceita += transaction.amount;
+          } else if (transaction.type === 'despesa') {
+            totalDespesa += transaction.amount;
+          } else if (transaction.type === 'investimento') {
+            totalInvestimento += transaction.amount;
+          }
+        });
+        
+        // Calcular saldo
+        const saldo = totalReceita - totalDespesa - totalInvestimento;
+        
+        // Atualizar estados
+        setTransactionsData(transactionsByType);
+        setSummaryData({
+          receita: totalReceita,
+          despesa: totalDespesa,
+          investimento: totalInvestimento,
+          saldo: saldo,
+        });
+      } catch (err) {
+        console.error('Erro ao processar dados:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchData();
+  }, [userId, selectedYear, selectedMonth]);
 
   const handleCardClick = (type: string) => {
     if (type !== 'saldo') {
       setSelectedType(type);
       setIsDialogOpen(true);
     }
+  };
+
+  // Formatar data para exibição
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('pt-BR');
   };
 
   return (
@@ -101,27 +204,33 @@ export function Dashboard() {
         </Select>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {summaryCards.map((card) => (
-          <Card 
-            key={card.type} 
-            className={`hover:shadow-lg transition-shadow ${card.type !== 'saldo' ? 'cursor-pointer' : ''}`}
-            onClick={() => handleCardClick(card.type)}
-          >
-            <CardHeader>
-              <CardTitle className={card.color}>{card.title}</CardTitle>
-              <CardDescription>
-                {selectedMonth} / {selectedYear}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className={`text-2xl font-bold ${card.color}`}>
-                R$ {mockData[card.type as keyof typeof mockData].toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-              </p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {isLoading ? (
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {summaryCards.map((card) => (
+            <Card 
+              key={card.type} 
+              className={`hover:shadow-lg transition-shadow ${card.type !== 'saldo' ? 'cursor-pointer' : ''}`}
+              onClick={() => handleCardClick(card.type)}
+            >
+              <CardHeader>
+                <CardTitle className={card.color}>{card.title}</CardTitle>
+                <CardDescription>
+                  {selectedMonth} / {selectedYear}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className={`text-2xl font-bold ${card.color}`}>
+                  R$ {summaryData[card.type as keyof SummaryData].toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-3xl">
@@ -135,27 +244,33 @@ export function Dashboard() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            {selectedType && mockTransactions[selectedType as keyof typeof mockTransactions]?.map((transaction) => (
-              <div 
-                key={transaction.id} 
-                className="p-4 rounded-lg border border-gray-200 hover:bg-gray-50"
-              >
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h3 className="font-medium">{transaction.description}</h3>
-                    <p className="text-sm text-gray-500">{transaction.category}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold">
-                      R$ {transaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      {new Date(transaction.date).toLocaleDateString('pt-BR')}
-                    </p>
+            {selectedType && transactionsData[selectedType as keyof TransactionsData]?.length > 0 ? (
+              transactionsData[selectedType as keyof TransactionsData]?.map((transaction) => (
+                <div 
+                  key={transaction.id} 
+                  className="p-4 rounded-lg border border-gray-200 hover:bg-gray-50"
+                >
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h3 className="font-medium">{transaction.description || transaction.category}</h3>
+                      <p className="text-sm text-gray-500">{transaction.category}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold">
+                        R$ {transaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {formatDate(transaction.created_at)}
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))
+            ) : (
+              <p className="text-center py-6 text-gray-500">
+                Nenhuma transação encontrada para este período.
+              </p>
+            )}
           </div>
         </DialogContent>
       </Dialog>
