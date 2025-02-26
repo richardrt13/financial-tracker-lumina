@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase'; // Importe o cliente Supabase
+import { supabase } from '@/lib/supabase';
 import {
   Card,
   CardContent,
@@ -19,8 +19,20 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
-import { Loader2 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Loader2, MoreVertical, Edit, Trash2 } from "lucide-react";
+import { toast } from "@/components/ui/use-toast";
 
 const summaryCards = [
   { title: "Receitas", type: "receita", color: "text-green-600" },
@@ -44,6 +56,7 @@ type Transaction = {
   amount: number;
   description?: string;
   created_at: string;
+  user_id: string;
 };
 
 type TransactionsData = {
@@ -64,7 +77,10 @@ export function Dashboard() {
   const [selectedMonth, setSelectedMonth] = useState(months[new Date().getMonth()]);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [summaryData, setSummaryData] = useState<SummaryData>({
     receita: 0,
     despesa: 0,
@@ -77,6 +93,12 @@ export function Dashboard() {
     investimento: [],
   });
   const [userId, setUserId] = useState<string | null>(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    description: '',
+    category: '',
+    amount: ''
+  });
 
   // Verificar se o usuário está autenticado
   useEffect(() => {
@@ -93,78 +115,197 @@ export function Dashboard() {
 
   // Buscar dados com base na seleção de ano e mês
   useEffect(() => {
-    const fetchData = async () => {
-      if (!userId) return;
-      
-      setIsLoading(true);
-      
-      try {
-        // Buscar todas as transações do mês e ano selecionados
-        const { data, error } = await supabase
-          .from('transactions')
-          .select('*')
-          .eq('user_id', userId)
-          .eq('year', selectedYear)
-          .eq('month', selectedMonth);
-          
-        if (error) {
-          console.error('Erro ao buscar transações:', error);
-          return;
-        }
-        
-        // Organizar transações por tipo
-        const transactionsByType: TransactionsData = {
-          receita: [],
-          despesa: [],
-          investimento: [],
-        };
-        
-        // Calcular valores totais
-        let totalReceita = 0;
-        let totalDespesa = 0;
-        let totalInvestimento = 0;
-        
-        data.forEach((transaction: Transaction) => {
-          // Adicionar à lista do tipo correspondente
-          if (transaction.type === 'receita' || transaction.type === 'despesa' || transaction.type === 'investimento') {
-            transactionsByType[transaction.type as keyof TransactionsData].push(transaction);
-          }
-          
-          // Somar aos totais
-          if (transaction.type === 'receita') {
-            totalReceita += transaction.amount;
-          } else if (transaction.type === 'despesa') {
-            totalDespesa += transaction.amount;
-          } else if (transaction.type === 'investimento') {
-            totalInvestimento += transaction.amount;
-          }
-        });
-        
-        // Calcular saldo
-        const saldo = totalReceita - totalDespesa - totalInvestimento;
-        
-        // Atualizar estados
-        setTransactionsData(transactionsByType);
-        setSummaryData({
-          receita: totalReceita,
-          despesa: totalDespesa,
-          investimento: totalInvestimento,
-          saldo: saldo,
-        });
-      } catch (err) {
-        console.error('Erro ao processar dados:', err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
     fetchData();
   }, [userId, selectedYear, selectedMonth]);
+
+  const fetchData = async () => {
+    if (!userId) return;
+    
+    setIsLoading(true);
+    
+    try {
+      // Buscar todas as transações do mês e ano selecionados
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('year', selectedYear)
+        .eq('month', selectedMonth);
+        
+      if (error) {
+        console.error('Erro ao buscar transações:', error);
+        return;
+      }
+      
+      // Organizar transações por tipo
+      const transactionsByType: TransactionsData = {
+        receita: [],
+        despesa: [],
+        investimento: [],
+      };
+      
+      // Calcular valores totais
+      let totalReceita = 0;
+      let totalDespesa = 0;
+      let totalInvestimento = 0;
+      
+      data.forEach((transaction: Transaction) => {
+        // Adicionar à lista do tipo correspondente
+        if (transaction.type === 'receita' || transaction.type === 'despesa' || transaction.type === 'investimento') {
+          transactionsByType[transaction.type as keyof TransactionsData].push(transaction);
+        }
+        
+        // Somar aos totais
+        if (transaction.type === 'receita') {
+          totalReceita += transaction.amount;
+        } else if (transaction.type === 'despesa') {
+          totalDespesa += transaction.amount;
+        } else if (transaction.type === 'investimento') {
+          totalInvestimento += transaction.amount;
+        }
+      });
+      
+      // Calcular saldo
+      const saldo = totalReceita - totalDespesa - totalInvestimento;
+      
+      // Atualizar estados
+      setTransactionsData(transactionsByType);
+      setSummaryData({
+        receita: totalReceita,
+        despesa: totalDespesa,
+        investimento: totalInvestimento,
+        saldo: saldo,
+      });
+    } catch (err) {
+      console.error('Erro ao processar dados:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleCardClick = (type: string) => {
     if (type !== 'saldo') {
       setSelectedType(type);
       setIsDialogOpen(true);
+    }
+  };
+
+  const handleEditClick = (transaction: Transaction) => {
+    setSelectedTransaction(transaction);
+    setEditFormData({
+      description: transaction.description || '',
+      category: transaction.category,
+      amount: transaction.amount.toString()
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleDeleteClick = (transaction: Transaction) => {
+    setSelectedTransaction(transaction);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleEditTransaction = async () => {
+    if (!selectedTransaction) return;
+    
+    setIsProcessing(true);
+    
+    try {
+      // Formatar o valor para número
+      const amount = Number(editFormData.amount.replace(',', '.'));
+      
+      if (isNaN(amount)) {
+        toast({
+          title: "Erro",
+          description: "Por favor, insira um valor válido.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      const { error } = await supabase
+        .from('transactions')
+        .update({
+          description: editFormData.description,
+          category: editFormData.category,
+          amount: amount
+        })
+        .eq('id', selectedTransaction.id)
+        .eq('user_id', userId);
+        
+      if (error) {
+        console.error('Erro ao atualizar transação:', error);
+        toast({
+          title: "Erro",
+          description: "Não foi possível atualizar a transação.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      toast({
+        title: "Sucesso",
+        description: "Transação atualizada com sucesso!"
+      });
+      
+      // Atualizar os dados após a edição
+      await fetchData();
+      
+      // Fechar o diálogo
+      setIsEditDialogOpen(false);
+    } catch (err) {
+      console.error('Erro ao processar atualização:', err);
+      toast({
+        title: "Erro",
+        description: "Ocorreu um erro ao processar sua solicitação.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleDeleteTransaction = async () => {
+    if (!selectedTransaction) return;
+    
+    setIsProcessing(true);
+    
+    try {
+      const { error } = await supabase
+        .from('transactions')
+        .delete()
+        .eq('id', selectedTransaction.id)
+        .eq('user_id', userId);
+        
+      if (error) {
+        console.error('Erro ao excluir transação:', error);
+        toast({
+          title: "Erro",
+          description: "Não foi possível excluir a transação.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      toast({
+        title: "Sucesso",
+        description: "Transação excluída com sucesso!"
+      });
+      
+      // Atualizar os dados após a exclusão
+      await fetchData();
+      
+      // Fechar o diálogo
+      setIsDeleteDialogOpen(false);
+    } catch (err) {
+      console.error('Erro ao processar exclusão:', err);
+      toast({
+        title: "Erro",
+        description: "Ocorreu um erro ao processar sua solicitação.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -232,6 +373,7 @@ export function Dashboard() {
         </div>
       )}
 
+      {/* Diálogo de listagem de transações */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
@@ -251,11 +393,11 @@ export function Dashboard() {
                   className="p-4 rounded-lg border border-gray-200 hover:bg-gray-50"
                 >
                   <div className="flex justify-between items-center">
-                    <div>
+                    <div className="flex-1">
                       <h3 className="font-medium">{transaction.description || transaction.category}</h3>
                       <p className="text-sm text-gray-500">{transaction.category}</p>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right mr-4">
                       <p className="font-semibold">
                         R$ {transaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                       </p>
@@ -263,6 +405,26 @@ export function Dashboard() {
                         {formatDate(transaction.created_at)}
                       </p>
                     </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleEditClick(transaction)}>
+                          <Edit className="h-4 w-4 mr-2" />
+                          Editar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem 
+                          onClick={() => handleDeleteClick(transaction)}
+                          className="text-red-600 focus:text-red-600"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Excluir
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
               ))
@@ -272,6 +434,101 @@ export function Dashboard() {
               </p>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo de edição de transação */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar Transação</DialogTitle>
+            <DialogDescription>
+              Modifique os detalhes da transação conforme necessário.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="description">Descrição</Label>
+              <Input
+                id="description"
+                value={editFormData.description}
+                onChange={(e) => setEditFormData({...editFormData, description: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="category">Categoria</Label>
+              <Input
+                id="category"
+                value={editFormData.category}
+                onChange={(e) => setEditFormData({...editFormData, category: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="amount">Valor</Label>
+              <Input
+                id="amount"
+                value={editFormData.amount}
+                onChange={(e) => setEditFormData({...editFormData, amount: e.target.value})}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsEditDialogOpen(false)}
+              disabled={isProcessing}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleEditTransaction}
+              disabled={isProcessing}
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Salvando...
+                </>
+              ) : (
+                'Salvar Alterações'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo de confirmação de exclusão */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirmar Exclusão</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir esta transação? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsDeleteDialogOpen(false)}
+              disabled={isProcessing}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={handleDeleteTransaction}
+              disabled={isProcessing}
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Excluindo...
+                </>
+              ) : (
+                'Confirmar Exclusão'
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
