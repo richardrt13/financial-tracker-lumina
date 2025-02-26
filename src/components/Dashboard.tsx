@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'; // Adicione useCallback aqui
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { transactionEvents } from '@/lib/transactionEvents'; // Importe transactionEvents
+import { transactionEvents } from '@/lib/transactionEvents';
 import {
   Card,
   CardContent,
@@ -32,6 +32,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, MoreVertical, Edit, Trash2 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 
@@ -58,6 +59,7 @@ type Transaction = {
   description?: string;
   created_at: string;
   user_id: string;
+  is_completed: boolean; // Novo campo
 };
 
 type TransactionsData = {
@@ -197,7 +199,6 @@ export function Dashboard() {
     };
   }, [fetchData]);
 
-
   const handleCardClick = (type: string) => {
     if (type !== 'saldo') {
       setSelectedType(type);
@@ -218,6 +219,41 @@ export function Dashboard() {
   const handleDeleteClick = (transaction: Transaction) => {
     setSelectedTransaction(transaction);
     setIsDeleteDialogOpen(true);
+  };
+
+  const toggleTransactionStatus = async (transaction: Transaction) => {
+    try {
+      const { error } = await supabase
+        .from('transactions')
+        .update({ is_completed: !transaction.is_completed })
+        .eq('id', transaction.id)
+        .eq('user_id', userId);
+        
+      if (error) {
+        console.error('Erro ao atualizar status da transação:', error);
+        toast({
+          title: "Erro",
+          description: "Não foi possível atualizar o status da transação.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      toast({
+        title: "Sucesso",
+        description: `Transação marcada como ${!transaction.is_completed ? 'concluída' : 'pendente'}!`
+      });
+      
+      // Atualizar os dados
+      await fetchData();
+    } catch (err) {
+      console.error('Erro ao processar atualização de status:', err);
+      toast({
+        title: "Erro",
+        description: "Ocorreu um erro ao processar sua solicitação.",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleEditTransaction = async () => {
@@ -405,11 +441,20 @@ export function Dashboard() {
               transactionsData[selectedType as keyof TransactionsData]?.map((transaction) => (
                 <div 
                   key={transaction.id} 
-                  className="p-4 rounded-lg border border-gray-200 hover:bg-gray-50"
+                  className={`p-4 rounded-lg border ${transaction.is_completed ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'} hover:bg-opacity-90`}
                 >
                   <div className="flex justify-between items-center">
                     <div className="flex-1">
-                      <h3 className="font-medium">{transaction.description || transaction.category}</h3>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={transaction.is_completed}
+                          onCheckedChange={() => toggleTransactionStatus(transaction)}
+                          id={`transaction-${transaction.id}`}
+                        />
+                        <h3 className={`font-medium ${transaction.is_completed ? 'line-through text-gray-500' : ''}`}>
+                          {transaction.description || transaction.category}
+                        </h3>
+                      </div>
                       <p className="text-sm text-gray-500">{transaction.category}</p>
                     </div>
                     <div className="text-right mr-4">
@@ -418,6 +463,9 @@ export function Dashboard() {
                       </p>
                       <p className="text-sm text-gray-500">
                         {formatDate(transaction.created_at)}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {transaction.is_completed ? 'Concluída' : 'Pendente'}
                       </p>
                     </div>
                     <DropdownMenu>
