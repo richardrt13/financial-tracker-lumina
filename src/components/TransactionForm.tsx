@@ -30,6 +30,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 
 const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
 const months = [
@@ -53,9 +55,10 @@ const formSchema = z.object({
     if (isNaN(parsed)) return 0;
     return parsed;
   })),
+  isRecurring: z.boolean().default(false),
+  recurringMonths: z.number().min(1).max(60).default(1),
 });
 
-// Defina o tipo para as transações
 type Transaction = {
   id?: number;
   year: string;
@@ -63,8 +66,9 @@ type Transaction = {
   type: "receita" | "despesa" | "investimento";
   category: string;
   amount: number;
-  user_id: string; // Assumindo que você está usando autenticação
+  user_id: string;
   created_at?: Date;
+  is_completed?: boolean;
 };
 
 export function TransactionForm() {
@@ -72,12 +76,9 @@ export function TransactionForm() {
   const [newCategory, setNewCategory] = useState("");
   const [categories, setCategories] = useState(defaultCategories);
   const [isLoading, setIsLoading] = useState(false);
-
-  // Verifica se o usuário está autenticado
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    // Recupera a sessão do usuário
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       
@@ -88,7 +89,6 @@ export function TransactionForm() {
     
     checkUser();
     
-    // Opcional: recuperar categorias personalizadas do usuário da base de dados
     const fetchUserCategories = async () => {
       if (!userId) return;
       
@@ -103,7 +103,6 @@ export function TransactionForm() {
       }
       
       if (userCategories && userCategories.length > 0) {
-        // Transformar categorias do banco para o formato usado no estado
         const userCats = {
           receita: [...defaultCategories.receita],
           despesa: [...defaultCategories.despesa],
@@ -133,12 +132,13 @@ export function TransactionForm() {
       type: "receita",
       category: "",
       amount: 0,
+      isRecurring: false,
+      recurringMonths: 1,
     },
   });
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     if (!userId) {
-      // Opcional: mostrar mensagem de erro ou redirecionar para login
       toast({
         title: "Erro",
         description: "Você precisa estar logado para adicionar transações.",
@@ -150,48 +150,92 @@ export function TransactionForm() {
     setIsLoading(true);
     
     try {
-      // Converte o objeto de valores do formulário para o tipo Transaction
-      const transaction: Omit<Transaction, 'id' | 'created_at'> = {
-        year: values.year,
-        month: values.month,
+      const baseTransaction = {
         type: values.type,
         category: values.category,
         amount: Number(values.amount),
         user_id: userId,
       };
-
-      // Insere a transação no Supabase
-      const { data, error } = await supabase
-        .from('transactions')
-        .insert(transaction)
-        .select();
-
-      if (error) {
-        console.error('Erro ao adicionar transação:', error);
+      
+      if (values.isRecurring) {
+        const transactions = [];
+        let currentMonth = months.indexOf(values.month);
+        let currentYear = parseInt(values.year);
+        
+        for (let i = 0; i < values.recurringMonths; i++) {
+          transactions.push({
+            ...baseTransaction,
+            year: String(currentYear),
+            month: months[currentMonth],
+            is_completed: i === 0,
+          });
+          
+          currentMonth++;
+          if (currentMonth > 11) {
+            currentMonth = 0;
+            currentYear++;
+          }
+        }
+        
+        const { data, error } = await supabase
+          .from('transactions')
+          .insert(transactions)
+          .select();
+          
+        if (error) {
+          console.error('Erro ao adicionar transações recorrentes:', error);
+          toast({
+            title: "Erro",
+            description: error.message || "Não foi possível salvar as transações. Tente novamente mais tarde.",
+            variant: "destructive"
+          });
+          return;
+        }
+        
         toast({
-          title: "Erro",
-          description: error.message || "Não foi possível salvar a transação. Tente novamente mais tarde.",
-          variant: "destructive"
+          title: "Sucesso",
+          description: `${values.recurringMonths} transações recorrentes adicionadas com sucesso!`,
         });
-        return;
+      } else {
+        const transaction = {
+          ...baseTransaction,
+          year: values.year,
+          month: values.month,
+          is_completed: true,
+        };
+        
+        const { data, error } = await supabase
+          .from('transactions')
+          .insert(transaction)
+          .select();
+        
+        if (error) {
+          console.error('Erro ao adicionar transação:', error);
+          toast({
+            title: "Erro",
+            description: error.message || "Não foi possível salvar a transação. Tente novamente mais tarde.",
+            variant: "destructive"
+          });
+          return;
+        }
+        
+        toast({
+          title: "Sucesso",
+          description: "Transação adicionada com sucesso!",
+        });
       }
-
-      // Limpa o formulário e notifica o usuário
+      
       form.reset({
         year: String(new Date().getFullYear()),
         month: months[new Date().getMonth()],
         type: "receita",
         category: "",
         amount: 0,
-      });
-      transactionEvents.notify();
-      toast({
-        title: "Sucesso",
-        description: "Transação adicionada com sucesso!",
+        isRecurring: false,
+        recurringMonths: 1,
       });
       
-      // Aqui você pode emitir um evento ou usar algum gerenciador de estado
-      // para atualizar a lista de transações na interface
+      transactionEvents.notify();
     } catch (error) {
       console.error('Erro inesperado:', error);
       toast({
@@ -209,13 +253,11 @@ export function TransactionForm() {
     
     const type = form.watch("type");
     
-    // Adiciona localmente
     setCategories(prev => ({
       ...prev,
       [type]: [...prev[type], newCategory.trim()]
     }));
     
-    // Se o usuário estiver logado, salva no banco de dados
     if (userId) {
       try {
         const { error } = await supabase
@@ -237,7 +279,6 @@ export function TransactionForm() {
     setNewCategory("");
     setIsNewCategoryDialogOpen(false);
     
-    // Seleciona a nova categoria no formulário
     form.setValue("category", newCategory.trim());
   };
 
@@ -379,6 +420,51 @@ export function TransactionForm() {
               </FormItem>
             )}
           />
+
+          <div className="space-y-4 mt-4">
+            <div className="flex items-center space-x-2">
+              <FormField
+                control={form.control}
+                name="isRecurring"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center space-x-3 space-y-0">
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        id="recurring-switch"
+                      />
+                    </FormControl>
+                    <FormLabel htmlFor="recurring-switch" className="cursor-pointer">
+                      Transação Recorrente
+                    </FormLabel>
+                  </FormItem>
+                )}
+              />
+            </div>
+            
+            {form.watch("isRecurring") && (
+              <FormField
+                control={form.control}
+                name="recurringMonths"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Duração (meses)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="60"
+                        {...field}
+                        onChange={(e) => field.onChange(parseInt(e.target.value) || 1)}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+          </div>
 
           <Button 
             type="submit" 
