@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react'; // Adicione useCallback aqui
 import { supabase } from '@/lib/supabase';
-import { transactionEvents } from '@/lib/transactionEvents';
+import { transactionEvents } from '@/lib/transactionEvents'; // Importe transactionEvents
 import {
   Card,
   CardContent,
@@ -114,12 +114,8 @@ export function Dashboard() {
     checkUser();
   }, []);
 
-  // Buscar dados com base na seleção de ano e mês
-  useEffect(() => {
-    fetchData();
-  }, [userId, selectedYear, selectedMonth]);
-
-  const fetchData = async () => {
+  // Memoize a função fetchData
+  const fetchData = useCallback(async () => {
     if (!userId) return;
     
     setIsLoading(true);
@@ -182,7 +178,25 @@ export function Dashboard() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [userId, selectedYear, selectedMonth]);
+
+  // Buscar dados com base na seleção de ano e mês
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Inscreve-se para receber notificações de eventos de transações
+  useEffect(() => {
+    const unsubscribe = transactionEvents.subscribe(() => {
+      fetchData();
+    });
+    
+    // Cancela a inscrição ao desmontar o componente
+    return () => {
+      unsubscribe();
+    };
+  }, [fetchData]);
+
 
   const handleCardClick = (type: string) => {
     if (type !== 'saldo') {
