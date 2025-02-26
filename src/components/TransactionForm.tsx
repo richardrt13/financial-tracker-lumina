@@ -49,7 +49,7 @@ export function TransactionForm() {
       month: months[new Date().getMonth()],
       type: "receita",
       category: "",
-      amount: "",
+      amount: "0",
     },
   });
 
