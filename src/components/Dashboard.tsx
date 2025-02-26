@@ -216,48 +216,9 @@ export function Dashboard() {
     setIsEditDialogOpen(true);
   };
 
-  const handleDeleteTransaction = async () => {
-    if (!selectedTransaction) return;
-    
-    setIsProcessing(true);
-    
-    try {
-      const { error } = await supabase
-        .from('transactions')
-        .delete()
-        .eq('id', selectedTransaction.id)
-        .eq('user_id', userId);
-        
-      if (error) {
-        console.error('Erro ao excluir transação:', error);
-        toast({
-          title: "Erro",
-          description: "Não foi possível excluir a transação.",
-          variant: "destructive"
-        });
-        return;
-      }
-      
-      toast({
-        title: "Sucesso",
-        description: "Transação excluída com sucesso!"
-      });
-  
-      // Recarregar os dados do banco de dados
-      await fetchData();
-  
-      // Fechar o diálogo
-      setIsDeleteDialogOpen(false);
-    } catch (err) {
-      console.error('Erro ao processar exclusão:', err);
-      toast({
-        title: "Erro",
-        description: "Ocorreu um erro ao processar sua solicitação.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsProcessing(false);
-    }
+  const handleDeleteClick = (transaction: Transaction) => {
+    setSelectedTransaction(transaction);
+    setIsDeleteDialogOpen(true);
   };
 
   const toggleTransactionStatus = async (transaction: Transaction) => {
@@ -294,7 +255,7 @@ export function Dashboard() {
       });
     }
   };
-
+  
   const handleEditTransaction = async () => {
     if (!selectedTransaction) return;
     
@@ -381,10 +342,10 @@ export function Dashboard() {
         title: "Sucesso",
         description: "Transação excluída com sucesso!"
       });
-      
-      // Atualizar os dados após a exclusão
+  
+      // Recarregar os dados do banco de dados
       await fetchData();
-      
+  
       // Fechar o diálogo
       setIsDeleteDialogOpen(false);
     } catch (err) {
