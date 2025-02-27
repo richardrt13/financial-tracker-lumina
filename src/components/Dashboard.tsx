@@ -45,6 +45,7 @@ const summaryCards = [
 
 const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
 const months = [
+  "Todos os Meses", // Adicionar esta opção
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
@@ -77,7 +78,7 @@ type SummaryData = {
 
 export function Dashboard() {
   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
-  const [selectedMonth, setSelectedMonth] = useState(months[new Date().getMonth()]);
+  const [selectedMonth, setSelectedMonth] = useState(months[new Date().getMonth() + 1]); // Ajuste para o índice correto
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -102,7 +103,7 @@ export function Dashboard() {
     category: '',
     amount: ''
   });
-  
+
   // Verificar se o usuário está autenticado
   useEffect(() => {
     const checkUser = async () => {
@@ -131,13 +132,18 @@ export function Dashboard() {
     setIsLoading(true);
     
     try {
-      // Buscar todas as transações do mês e ano selecionados
-      const { data, error } = await supabase
+      let query = supabase
         .from('transactions')
         .select('*')
         .eq('user_id', userId)
-        .eq('year', selectedYear)
-        .eq('month', selectedMonth);
+        .eq('year', selectedYear);
+
+      // Se "Todos os Meses" não estiver selecionado, filtrar por mês
+      if (selectedMonth !== "Todos os Meses") {
+        query = query.eq('month', selectedMonth);
+      }
+
+      const { data, error } = await query;
         
       if (error) {
         console.error('Erro ao buscar transações:', error);
@@ -501,7 +507,7 @@ export function Dashboard() {
               <CardHeader>
                 <CardTitle className={card.color}>{card.title}</CardTitle>
                 <CardDescription>
-                  {selectedMonth} / {selectedYear}
+                  {selectedMonth === "Todos os Meses" ? selectedYear : `${selectedMonth} / ${selectedYear}`}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -522,7 +528,7 @@ export function Dashboard() {
               Detalhes das {selectedType === 'receita' ? 'Receitas' : 
                            selectedType === 'despesa' ? 'Despesas' : 'Investimentos'}
               <span className="text-gray-500 text-sm ml-2">
-                {selectedMonth} / {selectedYear}
+                {selectedMonth === "Todos os Meses" ? selectedYear : `${selectedMonth} / ${selectedYear}`}
               </span>
             </DialogTitle>
           </DialogHeader>
