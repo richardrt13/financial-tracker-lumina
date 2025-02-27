@@ -56,7 +56,7 @@ const formSchema = z.object({
     return parsed;
   })),
   isRecurring: z.boolean().default(false),
-  recurringMonths: z.number().min(1).max(60).default(1),
+  recurringMonths: z.number().min(1).max(60),
 });
 
 type Transaction = {
@@ -133,7 +133,7 @@ export function TransactionForm() {
       category: "",
       amount: 0,
       isRecurring: false,
-      recurringMonths: 1,
+      recurringMonths: 0,
     },
   });
 
