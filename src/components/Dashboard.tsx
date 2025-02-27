@@ -110,6 +110,14 @@ export function Dashboard() {
       
       if (session?.user) {
         setUserId(session.user.id);
+      } else {
+        // Redirecionar para login ou mostrar mensagem
+        console.error("Usuário não autenticado");
+        toast({
+          title: "Erro de Autenticação",
+          description: "Você precisa estar logado para acessar esta página.",
+          variant: "destructive"
+        });
       }
     };
     
@@ -133,6 +141,11 @@ export function Dashboard() {
         
       if (error) {
         console.error('Erro ao buscar transações:', error);
+        toast({
+          title: "Erro ao carregar dados",
+          description: error.message,
+          variant: "destructive"
+        });
         return;
       }
       
@@ -177,6 +190,11 @@ export function Dashboard() {
       });
     } catch (err) {
       console.error('Erro ao processar dados:', err);
+      toast({
+        title: "Erro",
+        description: "Falha ao processar os dados. Tente novamente.",
+        variant: "destructive"
+      });
     } finally {
       setIsLoading(false);
     }
@@ -187,7 +205,7 @@ export function Dashboard() {
     if (userId) {
       fetchData();
     }
-  }, [fetchData, userId]);
+  }, [fetchData, userId, selectedYear, selectedMonth]);
 
   // Inscrever para eventos de transação
   useEffect(() => {
@@ -246,28 +264,19 @@ export function Dashboard() {
   };
 
   const toggleTransactionStatus = async (transaction: Transaction) => {
+    if (!userId) {
+      toast({
+        title: "Erro",
+        description: "Você precisa estar logado para realizar esta ação.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     try {
       setIsProcessing(true);
       
-      // Aplicar a atualização otimista no estado local
-      // Primeiro, vamos criar uma cópia profunda dos dados de transações
-      const updatedTransactionsData = { ...transactionsData };
-      
-      // Encontrar e atualizar a transação no estado local
-      const transactionType = transaction.type as keyof TransactionsData;
-      const transactionIndex = updatedTransactionsData[transactionType].findIndex(t => t.id === transaction.id);
-      
-      if (transactionIndex !== -1) {
-        updatedTransactionsData[transactionType][transactionIndex] = {
-          ...transaction,
-          is_completed: !transaction.is_completed
-        };
-        
-        // Atualizar o estado imediatamente para uma resposta rápida na UI
-        setTransactionsData(updatedTransactionsData);
-      }
-      
-      // Enviar a atualização para o servidor
+      // Enviar a atualização para o servidor ANTES de atualizar a UI
       const { error } = await supabase
         .from('transactions')
         .update({ is_completed: !transaction.is_completed })
@@ -278,22 +287,20 @@ export function Dashboard() {
         console.error('Erro ao atualizar status da transação:', error);
         toast({
           title: "Erro",
-          description: "Não foi possível atualizar o status da transação.",
+          description: "Não foi possível atualizar o status da transação: " + error.message,
           variant: "destructive"
         });
-        
-        // Reverter a atualização otimista em caso de erro
-        fetchData();
         return;
       }
       
+      // Após confirmação de sucesso, então atualizar a UI
       toast({
         title: "Sucesso",
         description: `Transação marcada como ${!transaction.is_completed ? 'concluída' : 'pendente'}!`
       });
       
       // Recarregar os dados do banco de dados para garantir sincronização
-      fetchData();
+      await fetchData();
     } catch (err) {
       console.error('Erro ao processar atualização de status:', err);
       toast({
@@ -301,16 +308,13 @@ export function Dashboard() {
         description: "Ocorreu um erro ao processar sua solicitação.",
         variant: "destructive"
       });
-      
-      // Recarregar os dados em caso de erro
-      fetchData();
     } finally {
       setIsProcessing(false);
     }
   };
   
   const handleEditTransaction = async () => {
-    if (!selectedTransaction) return;
+    if (!selectedTransaction || !userId) return;
     
     setIsProcessing(true);
     
@@ -328,47 +332,8 @@ export function Dashboard() {
         return;
       }
       
-      // Aplicar atualização otimista no estado local
-      const updatedTransactionsData = { ...transactionsData };
-      const transactionType = selectedTransaction.type as keyof TransactionsData;
-      const transactionIndex = updatedTransactionsData[transactionType].findIndex(
-        t => t.id === selectedTransaction.id
-      );
-      
-      if (transactionIndex !== -1) {
-        updatedTransactionsData[transactionType][transactionIndex] = {
-          ...selectedTransaction,
-          description: editFormData.description,
-          category: editFormData.category,
-          amount: amount
-        };
-        
-        // Atualizar o estado imediatamente
-        setTransactionsData(updatedTransactionsData);
-        
-        // Recalcular resumo
-        let totalReceita = 0;
-        let totalDespesa = 0;
-        let totalInvestimento = 0;
-        
-        Object.keys(updatedTransactionsData).forEach(type => {
-          updatedTransactionsData[type as keyof TransactionsData].forEach(t => {
-            if (type === 'receita') totalReceita += t.amount;
-            else if (type === 'despesa') totalDespesa += t.amount;
-            else if (type === 'investimento') totalInvestimento += t.amount;
-          });
-        });
-        
-        setSummaryData({
-          receita: totalReceita,
-          despesa: totalDespesa,
-          investimento: totalInvestimento,
-          saldo: totalReceita - totalDespesa - totalInvestimento
-        });
-      }
-      
-      // Enviar atualização para o servidor
-      const { error } = await supabase
+      // Enviar atualização para o servidor PRIMEIRO
+      const { error, data } = await supabase
         .from('transactions')
         .update({
           description: editFormData.description,
@@ -376,18 +341,16 @@ export function Dashboard() {
           amount: amount
         })
         .eq('id', selectedTransaction.id)
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .select();
         
       if (error) {
         console.error('Erro ao atualizar transação:', error);
         toast({
           title: "Erro",
-          description: "Não foi possível atualizar a transação.",
+          description: "Não foi possível atualizar a transação: " + error.message,
           variant: "destructive"
         });
-        
-        // Reverter mudanças em caso de erro
-        fetchData();
         return;
       }
       
@@ -408,51 +371,18 @@ export function Dashboard() {
         description: "Ocorreu um erro ao processar sua solicitação.",
         variant: "destructive"
       });
-      
-      // Recarregar em caso de erro
-      fetchData();
     } finally {
       setIsProcessing(false);
     }
   };
 
   const handleDeleteTransaction = async () => {
-    if (!selectedTransaction) return;
+    if (!selectedTransaction || !userId) return;
     
     setIsProcessing(true);
     
     try {
-      // Aplicar exclusão otimista no estado local
-      const updatedTransactionsData = { ...transactionsData };
-      const transactionType = selectedTransaction.type as keyof TransactionsData;
-      updatedTransactionsData[transactionType] = updatedTransactionsData[transactionType].filter(
-        t => t.id !== selectedTransaction.id
-      );
-      
-      // Atualizar o estado imediatamente
-      setTransactionsData(updatedTransactionsData);
-      
-      // Recalcular resumo
-      let totalReceita = 0;
-      let totalDespesa = 0;
-      let totalInvestimento = 0;
-      
-      Object.keys(updatedTransactionsData).forEach(type => {
-        updatedTransactionsData[type as keyof TransactionsData].forEach(t => {
-          if (type === 'receita') totalReceita += t.amount;
-          else if (type === 'despesa') totalDespesa += t.amount;
-          else if (type === 'investimento') totalInvestimento += t.amount;
-        });
-      });
-      
-      setSummaryData({
-        receita: totalReceita,
-        despesa: totalDespesa,
-        investimento: totalInvestimento,
-        saldo: totalReceita - totalDespesa - totalInvestimento
-      });
-      
-      // Enviar exclusão para o servidor
+      // Enviar exclusão para o servidor PRIMEIRO
       const { error } = await supabase
         .from('transactions')
         .delete()
@@ -463,12 +393,9 @@ export function Dashboard() {
         console.error('Erro ao excluir transação:', error);
         toast({
           title: "Erro",
-          description: "Não foi possível excluir a transação.",
+          description: "Não foi possível excluir a transação: " + error.message,
           variant: "destructive"
         });
-        
-        // Reverter mudanças em caso de erro
-        fetchData();
         return;
       }
       
@@ -489,9 +416,6 @@ export function Dashboard() {
         description: "Ocorreu um erro ao processar sua solicitação.",
         variant: "destructive"
       });
-      
-      // Recarregar em caso de erro
-      fetchData();
     } finally {
       setIsProcessing(false);
     }
@@ -502,6 +426,35 @@ export function Dashboard() {
     const date = new Date(dateString);
     return date.toLocaleDateString('pt-BR');
   };
+
+  // Verificar se há permissões e conexão com o Supabase
+  const checkSupabaseConnection = async () => {
+    try {
+      const { data, error } = await supabase.from('transactions').select('count').limit(1);
+      if (error) {
+        console.error('Erro de conexão com Supabase:', error);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error('Falha ao verificar conexão com Supabase:', err);
+      return false;
+    }
+  };
+
+  // Verificar conexão ao montar o componente
+  useEffect(() => {
+    checkSupabaseConnection()
+      .then(connected => {
+        if (!connected) {
+          toast({
+            title: "Problemas de Conexão",
+            description: "Não foi possível conectar ao banco de dados. Verifique sua conexão.",
+            variant: "destructive"
+          });
+        }
+      });
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -543,7 +496,7 @@ export function Dashboard() {
             <Card 
               key={card.type} 
               className={`hover:shadow-lg transition-shadow ${card.type !== 'saldo' ? 'cursor-pointer' : ''}`}
-              onClick={() => handleCardClick(card.type)}
+              onClick={() => card.type !== 'saldo' ? handleCardClick(card.type) : null}
             >
               <CardHeader>
                 <CardTitle className={card.color}>{card.title}</CardTitle>
@@ -573,7 +526,7 @@ export function Dashboard() {
               </span>
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto">
             {selectedType && transactionsData[selectedType as keyof TransactionsData]?.length > 0 ? (
               transactionsData[selectedType as keyof TransactionsData]?.map((transaction) => (
                 <div 
@@ -585,8 +538,9 @@ export function Dashboard() {
                       <div className="flex items-center gap-2">
                         <Checkbox
                           checked={transaction.is_completed}
-                          onCheckedChange={() => toggleTransactionStatus(transaction)}
+                          onCheckedChange={() => !isProcessing && toggleTransactionStatus(transaction)}
                           id={`transaction-${transaction.id}`}
+                          disabled={isProcessing}
                         />
                         <h3 className={`font-medium ${transaction.is_completed ? 'line-through text-gray-500' : ''}`}>
                           {transaction.description || transaction.category}
@@ -607,7 +561,7 @@ export function Dashboard() {
                     </div>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
+                        <Button variant="ghost" size="icon" disabled={isProcessing}>
                           <MoreVertical className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -638,7 +592,7 @@ export function Dashboard() {
       </Dialog>
 
       {/* Diálogo de edição de transação */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+      <Dialog open={isEditDialogOpen} onOpenChange={(open) => !isProcessing && setIsEditDialogOpen(open)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Editar Transação</DialogTitle>
@@ -653,6 +607,7 @@ export function Dashboard() {
                 id="description"
                 value={editFormData.description}
                 onChange={(e) => setEditFormData({...editFormData, description: e.target.value})}
+                disabled={isProcessing}
               />
             </div>
             <div className="space-y-2">
@@ -661,6 +616,7 @@ export function Dashboard() {
                 id="category"
                 value={editFormData.category}
                 onChange={(e) => setEditFormData({...editFormData, category: e.target.value})}
+                disabled={isProcessing}
               />
             </div>
             <div className="space-y-2">
@@ -669,6 +625,7 @@ export function Dashboard() {
                 id="amount"
                 value={editFormData.amount}
                 onChange={(e) => setEditFormData({...editFormData, amount: e.target.value})}
+                disabled={isProcessing}
               />
             </div>
           </div>
@@ -698,7 +655,7 @@ export function Dashboard() {
       </Dialog>
 
       {/* Diálogo de confirmação de exclusão */}
-      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+      <Dialog open={isDeleteDialogOpen} onOpenChange={(open) => !isProcessing && setIsDeleteDialogOpen(open)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Confirmar Exclusão</DialogTitle>
