@@ -31,7 +31,7 @@ const Header = () => {
   
   return (
     //<header className="bg-white shadow-sm py-4 px-6">
-    <header className="bg-[#4CAF50] shadow-sm py-4 px-6">
+    <header className="bg-[#2E7D32] shadow-sm py-4 px-6">
       <div className="max-w-7xl mx-auto flex justify-between items-center">
         <h1 
           className="text-xl font-semibold text-gray-800 cursor-pointer hover:text-blue-600 transition-colors" 
