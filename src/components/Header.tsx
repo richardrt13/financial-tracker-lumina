@@ -25,10 +25,19 @@ const Header = () => {
     }
   };
   
+  const goToHome = () => {
+    navigate('/');
+  };
+  
   return (
     <header className="bg-white shadow-sm py-4 px-6">
       <div className="max-w-7xl mx-auto flex justify-between items-center">
-        <h1 className="text-xl font-semibold text-gray-800">Gerenciamento Financeiro</h1>
+        <h1 
+          className="text-xl font-semibold text-gray-800 cursor-pointer hover:text-blue-600 transition-colors" 
+          onClick={goToHome}
+        >
+          Spendly
+        </h1>
         
         <div className="relative">
           <button 
