@@ -7,6 +7,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  CardFooter,
 } from "@/components/ui/card";
 import {
   Select,
@@ -61,6 +62,7 @@ type Transaction = {
   created_at: string;
   user_id: string;
   is_completed: boolean;
+  completed_at?: string;
 };
 
 type TransactionsData = {
@@ -74,6 +76,24 @@ type SummaryData = {
   despesa: number;
   investimento: number;
   saldo: number;
+};
+
+type CompletionData = {
+  receita: {
+    count: number;
+    completed: number;
+    percentage: number;
+  };
+  despesa: {
+    count: number;
+    completed: number;
+    percentage: number;
+  };
+  investimento: {
+    count: number;
+    completed: number;
+    percentage: number;
+  };
 };
 
 export function Dashboard() {
@@ -90,6 +110,11 @@ export function Dashboard() {
     despesa: 0,
     investimento: 0,
     saldo: 0,
+  });
+  const [completionData, setCompletionData] = useState<CompletionData>({
+    receita: { count: 0, completed: 0, percentage: 0 },
+    despesa: { count: 0, completed: 0, percentage: 0 },
+    investimento: { count: 0, completed: 0, percentage: 0 },
   });
   const [transactionsData, setTransactionsData] = useState<TransactionsData>({
     receita: [],
@@ -167,10 +192,23 @@ export function Dashboard() {
       let totalDespesa = 0;
       let totalInvestimento = 0;
       
+      // Calcular dados de conclusão
+      const completion: CompletionData = {
+        receita: { count: 0, completed: 0, percentage: 0 },
+        despesa: { count: 0, completed: 0, percentage: 0 },
+        investimento: { count: 0, completed: 0, percentage: 0 },
+      };
+      
       data.forEach((transaction: Transaction) => {
         // Adicionar à lista do tipo correspondente
         if (transaction.type === 'receita' || transaction.type === 'despesa' || transaction.type === 'investimento') {
           transactionsByType[transaction.type as keyof TransactionsData].push(transaction);
+          
+          // Atualizar contadores de conclusão
+          completion[transaction.type as keyof CompletionData].count++;
+          if (transaction.is_completed) {
+            completion[transaction.type as keyof CompletionData].completed++;
+          }
         }
         
         // Somar aos totais
@@ -186,6 +224,14 @@ export function Dashboard() {
       // Calcular saldo
       const saldo = totalReceita - totalDespesa - totalInvestimento;
       
+      // Calcular percentuais de conclusão
+      Object.keys(completion).forEach(key => {
+        const type = key as keyof CompletionData;
+        const count = completion[type].count;
+        const completed = completion[type].completed;
+        completion[type].percentage = count ? Math.round((completed / count) * 100) : 0;
+      });
+      
       // Atualizar estados
       setTransactionsData(transactionsByType);
       setSummaryData({
@@ -194,6 +240,7 @@ export function Dashboard() {
         investimento: totalInvestimento,
         saldo: saldo,
       });
+      setCompletionData(completion);
     } catch (err) {
       console.error('Erro ao processar dados:', err);
       toast({
@@ -282,10 +329,26 @@ export function Dashboard() {
     try {
       setIsProcessing(true);
       
+      // Determinar se vamos marcar como concluído ou não
+      const newStatus = !transaction.is_completed;
+      
+      // Preparar dados para atualização, incluindo a data de conclusão
+      const updateData: any = { 
+        is_completed: newStatus 
+      };
+      
+      // Adicionar data de conclusão apenas quando for marcar como concluído
+      if (newStatus) {
+        updateData.completed_at = new Date().toISOString();
+      } else {
+        // Se estiver desmarcando, remover a data de conclusão
+        updateData.completed_at = null;
+      }
+      
       // Enviar a atualização para o servidor ANTES de atualizar a UI
       const { error } = await supabase
         .from('transactions')
-        .update({ is_completed: !transaction.is_completed })
+        .update(updateData)
         .eq('id', transaction.id)
         .eq('user_id', userId);
         
@@ -302,7 +365,7 @@ export function Dashboard() {
       // Após confirmação de sucesso, então atualizar a UI
       toast({
         title: "Sucesso",
-        description: `Transação marcada como ${!transaction.is_completed ? 'concluída' : 'pendente'}!`
+        description: `Transação marcada como ${newStatus ? 'concluída' : 'pendente'}!`
       });
       
       // Recarregar os dados do banco de dados para garantir sincronização
@@ -428,7 +491,8 @@ export function Dashboard() {
   };
 
   // Formatar data para exibição
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString: string | undefined) => {
+    if (!dateString) return '';
     const date = new Date(dateString);
     return date.toLocaleDateString('pt-BR');
   };
@@ -515,6 +579,28 @@ export function Dashboard() {
                   R$ {summaryData[card.type as keyof SummaryData].toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                 </p>
               </CardContent>
+              {card.type !== 'saldo' && (
+                <CardFooter className="pt-0">
+                  <div className="w-full">
+                    <div className="flex justify-between text-sm text-gray-500 mb-1">
+                      <span>Concluídas:</span>
+                      <span>
+                        {completionData[card.type as keyof CompletionData].completed} / {completionData[card.type as keyof CompletionData].count}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2.5">
+                      <div 
+                        className={`h-2.5 rounded-full ${card.type === 'receita' ? 'bg-green-600' : 
+                                    card.type === 'despesa' ? 'bg-red-600' : 'bg-blue-600'}`}
+                        style={{ width: `${completionData[card.type as keyof CompletionData].percentage}%` }}
+                      ></div>
+                    </div>
+                    <div className="text-right text-sm text-gray-500 mt-1">
+                      {completionData[card.type as keyof CompletionData].percentage}%
+                    </div>
+                  </div>
+                </CardFooter>
+              )}
             </Card>
           ))}
         </div>
@@ -558,9 +644,11 @@ export function Dashboard() {
                       <p className="font-semibold">
                         R$ {transaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                       </p>
-                      <p className="text-sm text-gray-500">
-                        {formatDate(transaction.created_at)}
-                      </p>
+                      {transaction.is_completed && transaction.completed_at && (
+                        <p className="text-sm text-gray-500">
+                          Concluída em: {formatDate(transaction.completed_at)}
+                        </p>
+                      )}
                       <p className="text-xs text-gray-500">
                         {transaction.is_completed ? 'Concluída' : 'Pendente'}
                       </p>
