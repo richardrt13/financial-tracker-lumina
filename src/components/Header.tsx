@@ -31,10 +31,10 @@ const Header = () => {
   
   return (
     //<header className="bg-white shadow-sm py-4 px-6">
-    <header className="bg-[#2E7D32] shadow-sm py-4 px-6">
+    <header className="bg-[#2EC4B6] shadow-sm py-4 px-6">
       <div className="max-w-7xl mx-auto flex justify-between items-center">
         <h1 
-          className="text-xl font-semibold text-gray-800 cursor-pointer hover:text-blue-600 transition-colors" 
+          className="text-xl font-semibold text-white cursor-pointer hover:text-[#CBF3FO] transition-colors" 
           onClick={goToHome}
         >
           Spendly
@@ -43,7 +43,7 @@ const Header = () => {
         <div className="relative">
           <button 
             onClick={toggleMenu} 
-            className="p-2 rounded-full hover:bg-gray-100 focus:outline-none"
+            className="p-2 rounded-full hover:bg-white focus:outline-none"
             aria-label="Menu de usuário"
           >
             <Menu size={24} className="text-gray-700" />
