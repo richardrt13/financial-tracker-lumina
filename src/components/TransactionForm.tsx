@@ -56,7 +56,13 @@ const formSchema = z.object({
     return parsed;
   })),
   isRecurring: z.boolean().default(false),
-  recurringMonths: z.number().min(1).max(60).default(1),
+  recurringMonths: z.string().or(z.number()).transform(val => {
+    if (val === '') return '';
+    const parsed = typeof val === 'string' ? parseInt(val) : val;
+    return isNaN(parsed) ? 1 : parsed;
+  }).refine(val => val === '' || (typeof val === 'number' && val >= 1 && val <= 60), {
+    message: "A duração deve ser entre 1 e 60 meses"
+  }),
 });
 
 type Transaction = {
@@ -79,6 +85,8 @@ export function TransactionForm() {
   const [userId, setUserId] = useState<string | null>(null);
   // Track the current transaction type
   const [currentType, setCurrentType] = useState<"receita" | "despesa" | "investimento">("receita");
+  // Add state for recurring months input
+  const [recurringMonthsInput, setRecurringMonthsInput] = useState<string>("1");
 
   useEffect(() => {
     const checkUser = async () => {
@@ -135,7 +143,7 @@ export function TransactionForm() {
       category: "",
       amount: 0,
       isRecurring: false,
-      recurringMonths: 1,
+      recurringMonths: "1",
     },
   });
 
@@ -160,6 +168,20 @@ export function TransactionForm() {
       return;
     }
     
+    // Validate recurringMonths before submission
+    const recurringMonths = values.recurringMonths === '' ? 1 : 
+                           (typeof values.recurringMonths === 'string' ? 
+                            parseInt(values.recurringMonths) : values.recurringMonths);
+    
+    if (values.isRecurring && (isNaN(recurringMonths) || recurringMonths < 1 || recurringMonths > 60)) {
+      toast({
+        title: "Erro",
+        description: "A duração deve ser entre 1 e 60 meses",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     setIsLoading(true);
     
     try {
@@ -177,7 +199,7 @@ export function TransactionForm() {
         let currentMonth = months.indexOf(values.month);
         let currentYear = parseInt(values.year);
         
-        for (let i = 0; i < values.recurringMonths; i++) {
+        for (let i = 0; i < recurringMonths; i++) {
           transactions.push({
             ...baseTransaction,
             year: String(currentYear),
@@ -210,7 +232,7 @@ export function TransactionForm() {
         
         toast({
           title: "Sucesso",
-          description: `${values.recurringMonths} transações recorrentes adicionadas com sucesso!`,
+          description: `${recurringMonths} transações recorrentes adicionadas com sucesso!`,
         });
       } else {
         const transaction = {
@@ -242,6 +264,7 @@ export function TransactionForm() {
         });
       }
       
+      // Reset the form
       form.reset({
         year: String(new Date().getFullYear()),
         month: months[new Date().getMonth()],
@@ -249,8 +272,11 @@ export function TransactionForm() {
         category: "",
         amount: 0,
         isRecurring: false,
-        recurringMonths: 1,
+        recurringMonths: "1",
       });
+      
+      // Reset the recurring months input
+      setRecurringMonthsInput("1");
       
       transactionEvents.notify();
     } catch (error) {
@@ -297,6 +323,15 @@ export function TransactionForm() {
     setIsNewCategoryDialogOpen(false);
     
     form.setValue("category", newCategory.trim());
+  };
+
+  // Handle recurring months input changes
+  const handleRecurringMonthsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Permitir campo vazio
+    setRecurringMonthsInput(e.target.value);
+    
+    // Atualizar o valor no formulário
+    form.setValue("recurringMonths", e.target.value);
   };
 
   return (
@@ -470,14 +505,17 @@ export function TransactionForm() {
                     <FormLabel>Duração (meses)</FormLabel>
                     <FormControl>
                       <Input
-                        type="number"
+                        type="text"
                         min="1"
                         max="60"
-                        value={field.value}
-                        onChange={(e) => {
-                          // Permitir apagar o campo completamente
-                          const value = e.target.value === '' ? 1 : parseInt(e.target.value);
-                          field.onChange(value);
+                        value={recurringMonthsInput}
+                        onChange={handleRecurringMonthsChange}
+                        onBlur={() => {
+                          // Ao perder o foco, se o campo estiver vazio, definir valor mínimo
+                          if (recurringMonthsInput === '') {
+                            setRecurringMonthsInput("1");
+                            form.setValue("recurringMonths", "1");
+                          }
                         }}
                       />
                     </FormControl>
