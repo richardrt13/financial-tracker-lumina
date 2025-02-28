@@ -77,6 +77,8 @@ export function TransactionForm() {
   const [categories, setCategories] = useState(defaultCategories);
   const [isLoading, setIsLoading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  // Track the current transaction type
+  const [currentType, setCurrentType] = useState<"receita" | "despesa" | "investimento">("receita");
 
   useEffect(() => {
     const checkUser = async () => {
@@ -137,6 +139,17 @@ export function TransactionForm() {
     },
   });
 
+  // Update current type when form type changes
+  useEffect(() => {
+    const subscription = form.watch((value, { name }) => {
+      if (name === 'type' && value.type) {
+        setCurrentType(value.type as "receita" | "despesa" | "investimento");
+      }
+    });
+    
+    return () => subscription.unsubscribe();
+  }, [form.watch]);
+
   async function onSubmit(values: z.infer<typeof formSchema>) {
     if (!userId) {
       toast({
@@ -155,6 +168,8 @@ export function TransactionForm() {
         category: values.category,
         amount: Number(values.amount),
         user_id: userId,
+        // Transações sempre não completadas por padrão
+        is_completed: false,
       };
       
       if (values.isRecurring) {
@@ -167,7 +182,8 @@ export function TransactionForm() {
             ...baseTransaction,
             year: String(currentYear),
             month: months[currentMonth],
-            is_completed: i === 0,
+            // Todas as transações iniciam como não completadas
+            is_completed: false,
           });
           
           currentMonth++;
@@ -201,7 +217,8 @@ export function TransactionForm() {
           ...baseTransaction,
           year: values.year,
           month: values.month,
-          is_completed: true,
+          // Transação não completada por padrão
+          is_completed: false,
         };
         
         const { data, error } = await supabase
@@ -228,7 +245,7 @@ export function TransactionForm() {
       form.reset({
         year: String(new Date().getFullYear()),
         month: months[new Date().getMonth()],
-        type: "receita",
+        type: currentType, // Mantém o tipo atual ao invés de resetar para "receita"
         category: "",
         amount: 0,
         isRecurring: false,
@@ -251,7 +268,7 @@ export function TransactionForm() {
   const handleAddCategory = async () => {
     if (!newCategory.trim()) return;
     
-    const type = form.watch("type");
+    const type = currentType; // Usa o tipo atual
     
     setCategories(prev => ({
       ...prev,
@@ -346,6 +363,7 @@ export function TransactionForm() {
                 <FormLabel>Tipo</FormLabel>
                 <Select onValueChange={(value: "receita" | "despesa" | "investimento") => {
                   field.onChange(value);
+                  setCurrentType(value); // Atualiza o tipo atual
                   form.setValue("category", "");
                 }} defaultValue={field.value}>
                   <FormControl>
@@ -378,7 +396,7 @@ export function TransactionForm() {
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {categories[form.watch("type") as keyof typeof categories]?.map((category) => (
+                      {categories[currentType]?.map((category) => (
                         <SelectItem key={category} value={category}>
                           {category}
                         </SelectItem>
@@ -455,8 +473,12 @@ export function TransactionForm() {
                         type="number"
                         min="1"
                         max="60"
-                        {...field}
-                        onChange={(e) => field.onChange(parseInt(e.target.value) || 1)}
+                        value={field.value}
+                        onChange={(e) => {
+                          // Permitir apagar o campo completamente
+                          const value = e.target.value === '' ? 1 : parseInt(e.target.value);
+                          field.onChange(value);
+                        }}
                       />
                     </FormControl>
                     <FormMessage />
