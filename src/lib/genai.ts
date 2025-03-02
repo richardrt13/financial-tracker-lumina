@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Configuração da chave de API
-const API_KEY = process.env.GEMINI_API_KEY; // Certifique-se de que a chave está configurada no ambiente
+const API_KEY = import.meta.env.GEMINI_API_KEY; // Certifique-se de que a chave está configurada no ambiente
 
 if (!API_KEY) {
   throw new Error("Chave de API da Gemini não configurada. Defina NEXT_PUBLIC_GEMINI_API_KEY no arquivo .env.");
