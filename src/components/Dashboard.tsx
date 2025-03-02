@@ -36,7 +36,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, MoreVertical, Edit, Trash2 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
-import { Insights } from '@/components/Insights';
+import { Insights } from '@/components/Insights'; // Importe o componente Insights
 
 const summaryCards = [
   { title: "Receitas", type: "receita", color: "text-green-600" },
@@ -47,7 +47,7 @@ const summaryCards = [
 
 const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
 const months = [
-  "Todos os Meses", // Adicionar esta opção
+  "Todos os Meses",
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
@@ -99,7 +99,7 @@ type CompletionData = {
 
 export function Dashboard() {
   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
-  const [selectedMonth, setSelectedMonth] = useState(months[new Date().getMonth() + 1]); // Ajuste para o índice correto
+  const [selectedMonth, setSelectedMonth] = useState(months[new Date().getMonth() + 1]);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -138,7 +138,6 @@ export function Dashboard() {
       if (session?.user) {
         setUserId(session.user.id);
       } else {
-        // Redirecionar para login ou mostrar mensagem
         console.error("Usuário não autenticado");
         toast({
           title: "Erro de Autenticação",
@@ -164,7 +163,6 @@ export function Dashboard() {
         .eq('user_id', userId)
         .eq('year', selectedYear);
 
-      // Se "Todos os Meses" não estiver selecionado, filtrar por mês
       if (selectedMonth !== "Todos os Meses") {
         query = query.eq('month', selectedMonth);
       }
@@ -181,19 +179,16 @@ export function Dashboard() {
         return;
       }
       
-      // Organizar transações por tipo
       const transactionsByType: TransactionsData = {
         receita: [],
         despesa: [],
         investimento: [],
       };
       
-      // Calcular valores totais
       let totalReceita = 0;
       let totalDespesa = 0;
       let totalInvestimento = 0;
       
-      // Calcular dados de conclusão
       const completion: CompletionData = {
         receita: { count: 0, completed: 0, percentage: 0 },
         despesa: { count: 0, completed: 0, percentage: 0 },
@@ -201,18 +196,15 @@ export function Dashboard() {
       };
       
       data.forEach((transaction: Transaction) => {
-        // Adicionar à lista do tipo correspondente
         if (transaction.type === 'receita' || transaction.type === 'despesa' || transaction.type === 'investimento') {
           transactionsByType[transaction.type as keyof TransactionsData].push(transaction);
           
-          // Atualizar contadores de conclusão
           completion[transaction.type as keyof CompletionData].count++;
           if (transaction.is_completed) {
             completion[transaction.type as keyof CompletionData].completed++;
           }
         }
         
-        // Somar aos totais
         if (transaction.type === 'receita') {
           totalReceita += transaction.amount;
         } else if (transaction.type === 'despesa') {
@@ -222,10 +214,8 @@ export function Dashboard() {
         }
       });
       
-      // Calcular saldo
       const saldo = totalReceita - totalDespesa - totalInvestimento;
       
-      // Calcular percentuais de conclusão
       Object.keys(completion).forEach(key => {
         const type = key as keyof CompletionData;
         const count = completion[type].count;
@@ -233,7 +223,6 @@ export function Dashboard() {
         completion[type].percentage = count ? Math.round((completed / count) * 100) : 0;
       });
       
-      // Atualizar estados
       setTransactionsData(transactionsByType);
       setSummaryData({
         receita: totalReceita,
@@ -276,7 +265,6 @@ export function Dashboard() {
   useEffect(() => {
     if (!userId) return;
     
-    // Inscrever-se para atualizações em tempo real da tabela de transações
     const subscription = supabase
       .channel('transactions_changes')
       .on('postgres_changes', {
@@ -289,7 +277,6 @@ export function Dashboard() {
       })
       .subscribe();
     
-    // Limpar inscrição ao desmontar
     return () => {
       subscription.unsubscribe();
     };
@@ -330,23 +317,18 @@ export function Dashboard() {
     try {
       setIsProcessing(true);
       
-      // Determinar se vamos marcar como concluído ou não
       const newStatus = !transaction.is_completed;
       
-      // Preparar dados para atualização, incluindo a data de conclusão
       const updateData: any = { 
         is_completed: newStatus 
       };
       
-      // Adicionar data de conclusão apenas quando for marcar como concluído
       if (newStatus) {
         updateData.completed_at = new Date().toISOString();
       } else {
-        // Se estiver desmarcando, remover a data de conclusão
         updateData.completed_at = null;
       }
       
-      // Enviar a atualização para o servidor ANTES de atualizar a UI
       const { error } = await supabase
         .from('transactions')
         .update(updateData)
@@ -363,13 +345,11 @@ export function Dashboard() {
         return;
       }
       
-      // Após confirmação de sucesso, então atualizar a UI
       toast({
         title: "Sucesso",
         description: `Transação marcada como ${newStatus ? 'concluída' : 'pendente'}!`
       });
       
-      // Recarregar os dados do banco de dados para garantir sincronização
       await fetchData();
     } catch (err) {
       console.error('Erro ao processar atualização de status:', err);
@@ -389,7 +369,6 @@ export function Dashboard() {
     setIsProcessing(true);
     
     try {
-      // Formatar o valor para número
       const amount = Number(editFormData.amount.replace(',', '.'));
       
       if (isNaN(amount)) {
@@ -402,7 +381,6 @@ export function Dashboard() {
         return;
       }
       
-      // Enviar atualização para o servidor PRIMEIRO
       const { error, data } = await supabase
         .from('transactions')
         .update({
@@ -429,10 +407,8 @@ export function Dashboard() {
         description: "Transação atualizada com sucesso!"
       });
       
-      // Recarregar dados para garantir sincronização
       await fetchData();
       
-      // Fechar o diálogo
       setIsEditDialogOpen(false);
     } catch (err) {
       console.error('Erro ao processar atualização:', err);
@@ -452,7 +428,6 @@ export function Dashboard() {
     setIsProcessing(true);
     
     try {
-      // Enviar exclusão para o servidor PRIMEIRO
       const { error } = await supabase
         .from('transactions')
         .delete()
@@ -474,10 +449,8 @@ export function Dashboard() {
         description: "Transação excluída com sucesso!"
       });
   
-      // Recarregar dados para garantir sincronização
       await fetchData();
   
-      // Fechar o diálogo
       setIsDeleteDialogOpen(false);
     } catch (err) {
       console.error('Erro ao processar exclusão:', err);
@@ -491,14 +464,12 @@ export function Dashboard() {
     }
   };
 
-  // Formatar data para exibição
   const formatDate = (dateString: string | undefined) => {
     if (!dateString) return '';
     const date = new Date(dateString);
     return date.toLocaleDateString('pt-BR');
   };
 
-  // Verificar se há permissões e conexão com o Supabase
   const checkSupabaseConnection = async () => {
     try {
       const { data, error } = await supabase.from('transactions').select('count').limit(1);
@@ -513,7 +484,6 @@ export function Dashboard() {
     }
   };
 
-  // Verificar conexão ao montar o componente
   useEffect(() => {
     checkSupabaseConnection()
       .then(connected => {
@@ -526,92 +496,272 @@ export function Dashboard() {
         }
       });
   }, []);
+
   return (
-  <div className="space-y-4">
-    <div className="flex gap-4 mb-6">
-      <Select value={selectedYear} onValueChange={setSelectedYear}>
-        <SelectTrigger className="w-[180px]">
-          <SelectValue placeholder="Selecione o ano" />
-        </SelectTrigger>
-        <SelectContent>
-          {years.map((year) => (
-            <SelectItem key={year} value={String(year)}>
-              {year}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+    <div className="space-y-4">
+      <div className="flex gap-4 mb-6">
+        <Select value={selectedYear} onValueChange={setSelectedYear}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Selecione o ano" />
+          </SelectTrigger>
+          <SelectContent>
+            {years.map((year) => (
+              <SelectItem key={year} value={String(year)}>
+                {year}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-      <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-        <SelectTrigger className="w-[180px]">
-          <SelectValue placeholder="Selecione o mês" />
-        </SelectTrigger>
-        <SelectContent>
-          {months.map((month) => (
-            <SelectItem key={month} value={month}>
-              {month}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-
-    {isLoading ? (
-      <div className="flex justify-center items-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+        <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Selecione o mês" />
+          </SelectTrigger>
+          <SelectContent>
+            {months.map((month) => (
+              <SelectItem key={month} value={month}>
+                {month}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
-    ) : (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {summaryCards.map((card) => (
-          <Card 
-            key={card.type} 
-            className={`hover:shadow-lg transition-shadow ${card.type !== 'saldo' ? 'cursor-pointer' : ''}`}
-            onClick={() => card.type !== 'saldo' ? handleCardClick(card.type) : null}
-          >
-            <CardHeader>
-              <CardTitle className={card.color}>{card.title}</CardTitle>
-              <CardDescription>
+
+      {isLoading ? (
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {summaryCards.map((card) => (
+            <Card 
+              key={card.type} 
+              className={`hover:shadow-lg transition-shadow ${card.type !== 'saldo' ? 'cursor-pointer' : ''}`}
+              onClick={() => card.type !== 'saldo' ? handleCardClick(card.type) : null}
+            >
+              <CardHeader>
+                <CardTitle className={card.color}>{card.title}</CardTitle>
+                <CardDescription>
+                  {selectedMonth === "Todos os Meses" ? selectedYear : `${selectedMonth} / ${selectedYear}`}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className={`text-2xl font-bold ${card.color}`}>
+                  R$ {summaryData[card.type as keyof SummaryData].toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </p>
+              </CardContent>
+              {card.type !== 'saldo' && (
+                <CardFooter className="pt-0">
+                  <div className="w-full">
+                    <div className="flex justify-between text-sm text-gray-500 mb-1">
+                      <span>Concluídas:</span>
+                      <span>
+                        {completionData[card.type as keyof CompletionData].completed} / {completionData[card.type as keyof CompletionData].count}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2.5">
+                      <div 
+                        className={`h-2.5 rounded-full ${card.type === 'receita' ? 'bg-green-600' : 
+                                    card.type === 'despesa' ? 'bg-red-600' : 'bg-blue-600'}`}
+                        style={{ width: `${completionData[card.type as keyof CompletionData].percentage}%` }}
+                      ></div>
+                    </div>
+                    <div className="text-right text-sm text-gray-500 mt-1">
+                      {completionData[card.type as keyof CompletionData].percentage}%
+                    </div>
+                  </div>
+                </CardFooter>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Diálogo de listagem de transações */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-semibold">
+              Detalhes das {selectedType === 'receita' ? 'Receitas' : 
+                           selectedType === 'despesa' ? 'Despesas' : 'Investimentos'}
+              <span className="text-gray-500 text-sm ml-2">
                 {selectedMonth === "Todos os Meses" ? selectedYear : `${selectedMonth} / ${selectedYear}`}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className={`text-2xl font-bold ${card.color}`}>
-                R$ {summaryData[card.type as keyof SummaryData].toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-              </p>
-            </CardContent>
-            {card.type !== 'saldo' && (
-              <CardFooter className="pt-0">
-                <div className="w-full">
-                  <div className="flex justify-between text-sm text-gray-500 mb-1">
-                    <span>Concluídas:</span>
-                    <span>
-                      {completionData[card.type as keyof CompletionData].completed} / {completionData[card.type as keyof CompletionData].count}
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2.5">
-                    <div 
-                      className={`h-2.5 rounded-full ${card.type === 'receita' ? 'bg-green-600' : 
-                                  card.type === 'despesa' ? 'bg-red-600' : 'bg-blue-600'}`}
-                      style={{ width: `${completionData[card.type as keyof CompletionData].percentage}%` }}
-                    ></div>
-                  </div>
-                  <div className="text-right text-sm text-gray-500 mt-1">
-                    {completionData[card.type as keyof CompletionData].percentage}%
+              </span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto">
+            {selectedType && transactionsData[selectedType as keyof TransactionsData]?.length > 0 ? (
+              transactionsData[selectedType as keyof TransactionsData]?.map((transaction) => (
+                <div 
+                  key={transaction.id} 
+                  className={`p-4 rounded-lg border ${transaction.is_completed ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'} hover:bg-opacity-90`}
+                >
+                  <div className="flex justify-between items-center">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={transaction.is_completed}
+                          onCheckedChange={() => !isProcessing && toggleTransactionStatus(transaction)}
+                          id={`transaction-${transaction.id}`}
+                          disabled={isProcessing}
+                        />
+                        <h3 className={`font-medium ${transaction.is_completed ? 'line-through text-gray-500' : ''}`}>
+                          {transaction.description || transaction.category}
+                        </h3>
+                      </div>
+                      <p className="text-sm text-gray-500">{transaction.category}</p>
+                    </div>
+                    <div className="text-right mr-4">
+                      <p className="font-semibold">
+                        R$ {transaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </p>
+                      {transaction.is_completed && transaction.completed_at && (
+                        <p className="text-sm text-gray-500">
+                          Concluída em: {formatDate(transaction.completed_at)}
+                        </p>
+                      )}
+                      <p className="text-xs text-gray-500">
+                        {transaction.is_completed ? 'Concluída' : 'Pendente'}
+                      </p>
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" disabled={isProcessing}>
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleEditClick(transaction)}>
+                          <Edit className="h-4 w-4 mr-2" />
+                          Editar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem 
+                          onClick={() => handleDeleteClick(transaction)}
+                          className="text-red-600 focus:text-red-600"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Excluir
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
-              </CardFooter>
+              ))
+            ) : (
+              <p className="text-center py-6 text-gray-500">
+                Nenhuma transação encontrada para este período.
+              </p>
             )}
-          </Card>
-        ))}
-      </div>
-    )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
-    <Insights
-      selectedYear={selectedYear}
-      selectedMonth={selectedMonth}
-      summaryData={summaryData}
-      transactionsData={transactionsData}
-      completionData={completionData}
-    />
-  </div>
-);
+      {/* Diálogo de edição de transação */}
+      <Dialog open={isEditDialogOpen} onOpenChange={(open) => !isProcessing && setIsEditDialogOpen(open)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar Transação</DialogTitle>
+            <DialogDescription>
+              Modifique os detalhes da transação conforme necessário.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="description">Descrição</Label>
+              <Input
+                id="description"
+                value={editFormData.description}
+                onChange={(e) => setEditFormData({...editFormData, description: e.target.value})}
+                disabled={isProcessing}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="category">Categoria</Label>
+              <Input
+                id="category"
+                value={editFormData.category}
+                onChange={(e) => setEditFormData({...editFormData, category: e.target.value})}
+                disabled={isProcessing}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="amount">Valor</Label>
+              <Input
+                id="amount"
+                value={editFormData.amount}
+                onChange={(e) => setEditFormData({...editFormData, amount: e.target.value})}
+                disabled={isProcessing}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsEditDialogOpen(false)}
+              disabled={isProcessing}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleEditTransaction}
+              disabled={isProcessing}
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Salvando...
+                </>
+              ) : (
+                'Salvar Alterações'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo de confirmação de exclusão */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={(open) => !isProcessing && setIsDeleteDialogOpen(open)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirmar Exclusão</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir esta transação? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsDeleteDialogOpen(false)}
+              disabled={isProcessing}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={handleDeleteTransaction}
+              disabled={isProcessing}
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Excluindo...
+                </>
+              ) : (
+                'Confirmar Exclusão'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Componente Insights */}
+      <Insights
+        selectedYear={selectedYear}
+        selectedMonth={selectedMonth}
+        summaryData={summaryData}
+        transactionsData={transactionsData}
+        completionData={completionData}
+      />
+    </div>
+  );
+}
