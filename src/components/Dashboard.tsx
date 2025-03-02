@@ -36,6 +36,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, MoreVertical, Edit, Trash2 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
+import { Insights } from '@/components/Insights'; // Importe o componente Insights
 
 const summaryCards = [
   { title: "Receitas", type: "receita", color: "text-green-600" },
@@ -46,7 +47,7 @@ const summaryCards = [
 
 const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
 const months = [
-  "Todos os Meses", // Adicionar esta opção
+  "Todos os Meses",
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
@@ -98,7 +99,7 @@ type CompletionData = {
 
 export function Dashboard() {
   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
-  const [selectedMonth, setSelectedMonth] = useState(months[new Date().getMonth() + 1]); // Ajuste para o índice correto
+  const [selectedMonth, setSelectedMonth] = useState(months[new Date().getMonth() + 1]);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -137,7 +138,6 @@ export function Dashboard() {
       if (session?.user) {
         setUserId(session.user.id);
       } else {
-        // Redirecionar para login ou mostrar mensagem
         console.error("Usuário não autenticado");
         toast({
           title: "Erro de Autenticação",
@@ -163,7 +163,6 @@ export function Dashboard() {
         .eq('user_id', userId)
         .eq('year', selectedYear);
 
-      // Se "Todos os Meses" não estiver selecionado, filtrar por mês
       if (selectedMonth !== "Todos os Meses") {
         query = query.eq('month', selectedMonth);
       }
@@ -180,19 +179,16 @@ export function Dashboard() {
         return;
       }
       
-      // Organizar transações por tipo
       const transactionsByType: TransactionsData = {
         receita: [],
         despesa: [],
         investimento: [],
       };
       
-      // Calcular valores totais
       let totalReceita = 0;
       let totalDespesa = 0;
       let totalInvestimento = 0;
       
-      // Calcular dados de conclusão
       const completion: CompletionData = {
         receita: { count: 0, completed: 0, percentage: 0 },
         despesa: { count: 0, completed: 0, percentage: 0 },
@@ -200,18 +196,15 @@ export function Dashboard() {
       };
       
       data.forEach((transaction: Transaction) => {
-        // Adicionar à lista do tipo correspondente
         if (transaction.type === 'receita' || transaction.type === 'despesa' || transaction.type === 'investimento') {
           transactionsByType[transaction.type as keyof TransactionsData].push(transaction);
           
-          // Atualizar contadores de conclusão
           completion[transaction.type as keyof CompletionData].count++;
           if (transaction.is_completed) {
             completion[transaction.type as keyof CompletionData].completed++;
           }
         }
         
-        // Somar aos totais
         if (transaction.type === 'receita') {
           totalReceita += transaction.amount;
         } else if (transaction.type === 'despesa') {
@@ -221,10 +214,8 @@ export function Dashboard() {
         }
       });
       
-      // Calcular saldo
       const saldo = totalReceita - totalDespesa - totalInvestimento;
       
-      // Calcular percentuais de conclusão
       Object.keys(completion).forEach(key => {
         const type = key as keyof CompletionData;
         const count = completion[type].count;
@@ -232,7 +223,6 @@ export function Dashboard() {
         completion[type].percentage = count ? Math.round((completed / count) * 100) : 0;
       });
       
-      // Atualizar estados
       setTransactionsData(transactionsByType);
       setSummaryData({
         receita: totalReceita,
@@ -275,7 +265,6 @@ export function Dashboard() {
   useEffect(() => {
     if (!userId) return;
     
-    // Inscrever-se para atualizações em tempo real da tabela de transações
     const subscription = supabase
       .channel('transactions_changes')
       .on('postgres_changes', {
@@ -288,7 +277,6 @@ export function Dashboard() {
       })
       .subscribe();
     
-    // Limpar inscrição ao desmontar
     return () => {
       subscription.unsubscribe();
     };
@@ -329,23 +317,18 @@ export function Dashboard() {
     try {
       setIsProcessing(true);
       
-      // Determinar se vamos marcar como concluído ou não
       const newStatus = !transaction.is_completed;
       
-      // Preparar dados para atualização, incluindo a data de conclusão
       const updateData: any = { 
         is_completed: newStatus 
       };
       
-      // Adicionar data de conclusão apenas quando for marcar como concluído
       if (newStatus) {
         updateData.completed_at = new Date().toISOString();
       } else {
-        // Se estiver desmarcando, remover a data de conclusão
         updateData.completed_at = null;
       }
       
-      // Enviar a atualização para o servidor ANTES de atualizar a UI
       const { error } = await supabase
         .from('transactions')
         .update(updateData)
@@ -362,13 +345,11 @@ export function Dashboard() {
         return;
       }
       
-      // Após confirmação de sucesso, então atualizar a UI
       toast({
         title: "Sucesso",
         description: `Transação marcada como ${newStatus ? 'concluída' : 'pendente'}!`
       });
       
-      // Recarregar os dados do banco de dados para garantir sincronização
       await fetchData();
     } catch (err) {
       console.error('Erro ao processar atualização de status:', err);
@@ -388,7 +369,6 @@ export function Dashboard() {
     setIsProcessing(true);
     
     try {
-      // Formatar o valor para número
       const amount = Number(editFormData.amount.replace(',', '.'));
       
       if (isNaN(amount)) {
@@ -401,7 +381,6 @@ export function Dashboard() {
         return;
       }
       
-      // Enviar atualização para o servidor PRIMEIRO
       const { error, data } = await supabase
         .from('transactions')
         .update({
@@ -428,10 +407,8 @@ export function Dashboard() {
         description: "Transação atualizada com sucesso!"
       });
       
-      // Recarregar dados para garantir sincronização
       await fetchData();
       
-      // Fechar o diálogo
       setIsEditDialogOpen(false);
     } catch (err) {
       console.error('Erro ao processar atualização:', err);
@@ -451,7 +428,6 @@ export function Dashboard() {
     setIsProcessing(true);
     
     try {
-      // Enviar exclusão para o servidor PRIMEIRO
       const { error } = await supabase
         .from('transactions')
         .delete()
@@ -473,10 +449,8 @@ export function Dashboard() {
         description: "Transação excluída com sucesso!"
       });
   
-      // Recarregar dados para garantir sincronização
       await fetchData();
   
-      // Fechar o diálogo
       setIsDeleteDialogOpen(false);
     } catch (err) {
       console.error('Erro ao processar exclusão:', err);
@@ -490,14 +464,12 @@ export function Dashboard() {
     }
   };
 
-  // Formatar data para exibição
   const formatDate = (dateString: string | undefined) => {
     if (!dateString) return '';
     const date = new Date(dateString);
     return date.toLocaleDateString('pt-BR');
   };
 
-  // Verificar se há permissões e conexão com o Supabase
   const checkSupabaseConnection = async () => {
     try {
       const { data, error } = await supabase.from('transactions').select('count').limit(1);
@@ -512,7 +484,6 @@ export function Dashboard() {
     }
   };
 
-  // Verificar conexão ao montar o componente
   useEffect(() => {
     checkSupabaseConnection()
       .then(connected => {
@@ -782,6 +753,15 @@ export function Dashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Componente Insights */}
+      <Insights
+        selectedYear={selectedYear}
+        selectedMonth={selectedMonth}
+        summaryData={summaryData}
+        transactionsData={transactionsData}
+        completionData={completionData}
+      />
     </div>
   );
 }
