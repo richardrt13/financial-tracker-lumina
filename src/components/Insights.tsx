@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { genai } from '@/lib/genai'; // Ajuste o caminho conforme necessário
 import { SummaryData, TransactionsData, CompletionData } from './Dashboard'; // Importe os tipos do Dashboard
+import { Loader2 } from 'lucide-react'; // Importe o componente Loader2
 
 interface InsightsProps {
   selectedYear: string;
@@ -28,13 +29,29 @@ export function Insights({ selectedYear, selectedMonth, summaryData, transaction
           completion: completionData,
         };
 
-        // Enviar os dados para o modelo de IA
-        const model = genai.GenerativeModel("gemini-1.5-flash");
-        const prompt = `Analise os seguintes dados financeiros e forneça insights, dicas e alertas: ${JSON.stringify(dataToAnalyze)}`;
-        const response = await model.generateContent(prompt);
-
+        // Forma correta de chamar a API do Gemini
+        const model = genai.getGenerativeModel({ model: "gemini-1.5-flash" });
+        
+        // Prompt melhorado com instruções mais específicas
+        const prompt = `
+        Você é um consultor financeiro especializado. Analise os seguintes dados financeiros e forneça 3-5 insights valiosos:
+        
+        ${JSON.stringify(dataToAnalyze, null, 2)}
+        
+        Estruture sua resposta da seguinte forma:
+        1. Resumo da situação financeira (2-3 frases)
+        2. Insights principais (liste cada insight em um parágrafo separado)
+        3. Recomendações práticas (2-3 sugestões acionáveis)
+        4. Alertas (se aplicável, destaque quaisquer sinais de alerta nos dados)
+        
+        Mantenha a análise concisa, específica e diretamente relacionada aos dados fornecidos. Não inclua informações genéricas.
+        `;
+        
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        
         // Definir os insights gerados
-        setInsights(response.text);
+        setInsights(response.text());
       } catch (error) {
         console.error('Erro ao gerar insights:', error);
         setInsights('Erro ao gerar insights. Tente novamente mais tarde.');
@@ -43,7 +60,10 @@ export function Insights({ selectedYear, selectedMonth, summaryData, transaction
       }
     };
 
-    generateInsights();
+    // Só gerar insights quando todos os dados necessários estiverem disponíveis
+    if (selectedYear && selectedMonth && summaryData && transactionsData && completionData) {
+      generateInsights();
+    }
   }, [selectedYear, selectedMonth, summaryData, transactionsData, completionData]);
 
   return (
