@@ -263,18 +263,17 @@ export function TransactionForm() {
           description: "Transação adicionada com sucesso!",
         });
       }
-      
       // Reset the form
       form.reset({
-        year: String(new Date().getFullYear()),
-        month: months[new Date().getMonth()],
-        type: currentType, // Mantém o tipo atual ao invés de resetar para "receita"
+        year: values.year, 
+        month: values.month, 
+        type: currentType,
         category: "",
         amount: 0,
         isRecurring: false,
         recurringMonths: "1",
       });
-      
+            
       // Reset the recurring months input
       setRecurringMonthsInput("1");
       
