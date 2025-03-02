@@ -526,270 +526,92 @@ export function Dashboard() {
         }
       });
   }, []);
-
   return (
-    <div className="space-y-4">
-      <div className="flex gap-4 mb-6">
-        <Select value={selectedYear} onValueChange={setSelectedYear}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Selecione o ano" />
-          </SelectTrigger>
-          <SelectContent>
-            {years.map((year) => (
-              <SelectItem key={year} value={String(year)}>
-                {year}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Selecione o mês" />
-          </SelectTrigger>
-          <SelectContent>
-            {months.map((month) => (
-              <SelectItem key={month} value={month}>
-                {month}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {isLoading ? (
-        <div className="flex justify-center items-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {summaryCards.map((card) => (
-            <Card 
-              key={card.type} 
-              className={`hover:shadow-lg transition-shadow ${card.type !== 'saldo' ? 'cursor-pointer' : ''}`}
-              onClick={() => card.type !== 'saldo' ? handleCardClick(card.type) : null}
-            >
-              <CardHeader>
-                <CardTitle className={card.color}>{card.title}</CardTitle>
-                <CardDescription>
-                  {selectedMonth === "Todos os Meses" ? selectedYear : `${selectedMonth} / ${selectedYear}`}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className={`text-2xl font-bold ${card.color}`}>
-                  R$ {summaryData[card.type as keyof SummaryData].toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </p>
-              </CardContent>
-              {card.type !== 'saldo' && (
-                <CardFooter className="pt-0">
-                  <div className="w-full">
-                    <div className="flex justify-between text-sm text-gray-500 mb-1">
-                      <span>Concluídas:</span>
-                      <span>
-                        {completionData[card.type as keyof CompletionData].completed} / {completionData[card.type as keyof CompletionData].count}
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5">
-                      <div 
-                        className={`h-2.5 rounded-full ${card.type === 'receita' ? 'bg-green-600' : 
-                                    card.type === 'despesa' ? 'bg-red-600' : 'bg-blue-600'}`}
-                        style={{ width: `${completionData[card.type as keyof CompletionData].percentage}%` }}
-                      ></div>
-                    </div>
-                    <div className="text-right text-sm text-gray-500 mt-1">
-                      {completionData[card.type as keyof CompletionData].percentage}%
-                    </div>
-                  </div>
-                </CardFooter>
-              )}
-            </Card>
+  <div className="space-y-4">
+    <div className="flex gap-4 mb-6">
+      <Select value={selectedYear} onValueChange={setSelectedYear}>
+        <SelectTrigger className="w-[180px]">
+          <SelectValue placeholder="Selecione o ano" />
+        </SelectTrigger>
+        <SelectContent>
+          {years.map((year) => (
+            <SelectItem key={year} value={String(year)}>
+              {year}
+            </SelectItem>
           ))}
-        </div>
-      )}
+        </SelectContent>
+      </Select>
 
-      {/* Diálogo de listagem de transações */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-semibold">
-              Detalhes das {selectedType === 'receita' ? 'Receitas' : 
-                           selectedType === 'despesa' ? 'Despesas' : 'Investimentos'}
-              <span className="text-gray-500 text-sm ml-2">
+      <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+        <SelectTrigger className="w-[180px]">
+          <SelectValue placeholder="Selecione o mês" />
+        </SelectTrigger>
+        <SelectContent>
+          {months.map((month) => (
+            <SelectItem key={month} value={month}>
+              {month}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+
+    {isLoading ? (
+      <div className="flex justify-center items-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+      </div>
+    ) : (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {summaryCards.map((card) => (
+          <Card 
+            key={card.type} 
+            className={`hover:shadow-lg transition-shadow ${card.type !== 'saldo' ? 'cursor-pointer' : ''}`}
+            onClick={() => card.type !== 'saldo' ? handleCardClick(card.type) : null}
+          >
+            <CardHeader>
+              <CardTitle className={card.color}>{card.title}</CardTitle>
+              <CardDescription>
                 {selectedMonth === "Todos os Meses" ? selectedYear : `${selectedMonth} / ${selectedYear}`}
-              </span>
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 max-h-[70vh] overflow-y-auto">
-            {selectedType && transactionsData[selectedType as keyof TransactionsData]?.length > 0 ? (
-              transactionsData[selectedType as keyof TransactionsData]?.map((transaction) => (
-                <div 
-                  key={transaction.id} 
-                  className={`p-4 rounded-lg border ${transaction.is_completed ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'} hover:bg-opacity-90`}
-                >
-                  <div className="flex justify-between items-center">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          checked={transaction.is_completed}
-                          onCheckedChange={() => !isProcessing && toggleTransactionStatus(transaction)}
-                          id={`transaction-${transaction.id}`}
-                          disabled={isProcessing}
-                        />
-                        <h3 className={`font-medium ${transaction.is_completed ? 'line-through text-gray-500' : ''}`}>
-                          {transaction.description || transaction.category}
-                        </h3>
-                      </div>
-                      <p className="text-sm text-gray-500">{transaction.category}</p>
-                    </div>
-                    <div className="text-right mr-4">
-                      <p className="font-semibold">
-                        R$ {transaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                      </p>
-                      {transaction.is_completed && transaction.completed_at && (
-                        <p className="text-sm text-gray-500">
-                          Concluída em: {formatDate(transaction.completed_at)}
-                        </p>
-                      )}
-                      <p className="text-xs text-gray-500">
-                        {transaction.is_completed ? 'Concluída' : 'Pendente'}
-                      </p>
-                    </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" disabled={isProcessing}>
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleEditClick(transaction)}>
-                          <Edit className="h-4 w-4 mr-2" />
-                          Editar
-                        </DropdownMenuItem>
-                        <DropdownMenuItem 
-                          onClick={() => handleDeleteClick(transaction)}
-                          className="text-red-600 focus:text-red-600"
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Excluir
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className={`text-2xl font-bold ${card.color}`}>
+                R$ {summaryData[card.type as keyof SummaryData].toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </p>
+            </CardContent>
+            {card.type !== 'saldo' && (
+              <CardFooter className="pt-0">
+                <div className="w-full">
+                  <div className="flex justify-between text-sm text-gray-500 mb-1">
+                    <span>Concluídas:</span>
+                    <span>
+                      {completionData[card.type as keyof CompletionData].completed} / {completionData[card.type as keyof CompletionData].count}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div 
+                      className={`h-2.5 rounded-full ${card.type === 'receita' ? 'bg-green-600' : 
+                                  card.type === 'despesa' ? 'bg-red-600' : 'bg-blue-600'}`}
+                      style={{ width: `${completionData[card.type as keyof CompletionData].percentage}%` }}
+                    ></div>
+                  </div>
+                  <div className="text-right text-sm text-gray-500 mt-1">
+                    {completionData[card.type as keyof CompletionData].percentage}%
                   </div>
                 </div>
-              ))
-            ) : (
-              <p className="text-center py-6 text-gray-500">
-                Nenhuma transação encontrada para este período.
-              </p>
+              </CardFooter>
             )}
-          </div>
-        </DialogContent>
-      </Dialog>
+          </Card>
+        ))}
+      </div>
+    )}
 
-      {/* Diálogo de edição de transação */}
-      <Dialog open={isEditDialogOpen} onOpenChange={(open) => !isProcessing && setIsEditDialogOpen(open)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Editar Transação</DialogTitle>
-            <DialogDescription>
-              Modifique os detalhes da transação conforme necessário.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="description">Descrição</Label>
-              <Input
-                id="description"
-                value={editFormData.description}
-                onChange={(e) => setEditFormData({...editFormData, description: e.target.value})}
-                disabled={isProcessing}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="category">Categoria</Label>
-              <Input
-                id="category"
-                value={editFormData.category}
-                onChange={(e) => setEditFormData({...editFormData, category: e.target.value})}
-                disabled={isProcessing}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="amount">Valor</Label>
-              <Input
-                id="amount"
-                value={editFormData.amount}
-                onChange={(e) => setEditFormData({...editFormData, amount: e.target.value})}
-                disabled={isProcessing}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => setIsEditDialogOpen(false)}
-              disabled={isProcessing}
-            >
-              Cancelar
-            </Button>
-            <Button 
-              onClick={handleEditTransaction}
-              disabled={isProcessing}
-            >
-              {isProcessing ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Salvando...
-                </>
-              ) : (
-                'Salvar Alterações'
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Diálogo de confirmação de exclusão */}
-      <Dialog open={isDeleteDialogOpen} onOpenChange={(open) => !isProcessing && setIsDeleteDialogOpen(open)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Confirmar Exclusão</DialogTitle>
-            <DialogDescription>
-              Tem certeza que deseja excluir esta transação? Esta ação não pode ser desfeita.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => setIsDeleteDialogOpen(false)}
-              disabled={isProcessing}
-            >
-              Cancelar
-            </Button>
-            <Button 
-              variant="destructive"
-              onClick={handleDeleteTransaction}
-              disabled={isProcessing}
-            >
-              {isProcessing ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Excluindo...
-                </>
-              ) : (
-                'Confirmar Exclusão'
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-         <Insights
-        selectedYear={selectedYear}
-        selectedMonth={selectedMonth}
-        summaryData={summaryData}
-        transactionsData={transactionsData}
-        completionData={completionData}
-      />
-    </div>
-  );
-}
+    <Insights
+      selectedYear={selectedYear}
+      selectedMonth={selectedMonth}
+      summaryData={summaryData}
+      transactionsData={transactionsData}
+      completionData={completionData}
+    />
+  </div>
+);
