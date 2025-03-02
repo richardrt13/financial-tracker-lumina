@@ -782,13 +782,6 @@ export function Dashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    <Insights
-      selectedYear={selectedYear}
-      selectedMonth={selectedMonth}
-      summaryData={summaryData}
-      transactionsData={transactionsData}
-      completionData={completionData}
-    />
-  </div>
+    </div>
   );
 }
