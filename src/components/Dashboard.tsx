@@ -36,6 +36,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, MoreVertical, Edit, Trash2 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
+import { Insights } from '@/components/Insights';
 
 const summaryCards = [
   { title: "Receitas", type: "receita", color: "text-green-600" },
