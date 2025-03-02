@@ -268,7 +268,7 @@ export function TransactionForm() {
         year: values.year, 
         month: values.month, 
         type: currentType,
-        category: "",
+        category: values.category,
         amount: 0,
         isRecurring: false,
         recurringMonths: "1",
