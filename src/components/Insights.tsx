@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { genai } from '@/lib/genai'; // Ajuste o caminho conforme necessário
 import { SummaryData, TransactionsData, CompletionData } from './Dashboard'; // Importe os tipos do Dashboard
 import { Loader2 } from 'lucide-react'; // Importe o componente Loader2
+import { Button } from '@/components/ui/button'; // Importe o componente Button
 
 interface InsightsProps {
   selectedYear: string;
@@ -15,70 +16,78 @@ export function Insights({ selectedYear, selectedMonth, summaryData, transaction
   const [insights, setInsights] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  useEffect(() => {
-    const generateInsights = async () => {
-      setIsLoading(true);
+  const generateInsights = async () => {
+    setIsLoading(true);
 
-      try {
-        // Preparar os dados para enviar ao modelo de IA
-        const dataToAnalyze = {
-          year: selectedYear,
-          month: selectedMonth,
-          summary: summaryData,
-          transactions: transactionsData,
-          completion: completionData,
-        };
+    try {
+      // Preparar os dados para enviar ao modelo de IA
+      const dataToAnalyze = {
+        year: selectedYear,
+        month: selectedMonth,
+        summary: summaryData,
+        transactions: transactionsData,
+        completion: completionData,
+      };
 
-        // Forma correta de chamar a API do Gemini
-        const model = genai.getGenerativeModel({ model: "gemini-1.5-flash" });
-        
-        // Prompt melhorado com instruções mais específicas
-        const prompt = `
-        Você é um consultor financeiro especializado. Analise os seguintes dados financeiros e forneça 3-5 insights valiosos:
-        
-        ${JSON.stringify(dataToAnalyze, null, 2)}
-        
-        Estruture sua resposta da seguinte forma:
-        1. Resumo da situação financeira (2-3 frases)
-        2. Insights principais (liste cada insight em um parágrafo separado)
-        3. Recomendações práticas (2-3 sugestões acionáveis)
-        4. Alertas (se aplicável, destaque quaisquer sinais de alerta nos dados)
-        
-        Mantenha a análise concisa, específica e diretamente relacionada aos dados fornecidos. Não inclua informações genéricas.
-        `;
-        
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        
-        // Definir os insights gerados
-        setInsights(response.text());
-      } catch (error) {
-        console.error('Erro ao gerar insights:', error);
-        setInsights('Erro ao gerar insights. Tente novamente mais tarde.');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    // Só gerar insights quando todos os dados necessários estiverem disponíveis
-    if (selectedYear && selectedMonth && summaryData && transactionsData && completionData) {
-      generateInsights();
+      // Forma correta de chamar a API do Gemini
+      const model = genai.getGenerativeModel({ model: "gemini-1.5-flash" });
+      
+      // Prompt melhorado para respostas mais curtas e assertivas
+      const prompt = `
+      Analise estes dados financeiros e forneça 2 insights breves e assertivos:
+      
+      ${JSON.stringify(dataToAnalyze, null, 2)}
+      
+      Formato da resposta:
+      • Insight 1: [Uma frase assertiva sobre um aspecto importante]
+      • Insight 2: [Uma frase assertiva com uma recomendação específica]
+      
+      Seja extremamente conciso. Cada insight deve ter no máximo 1-2 frases. Foque apenas nos pontos mais relevantes.
+      `;
+      
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      
+      // Definir os insights gerados
+      setInsights(response.text());
+    } catch (error) {
+      console.error('Erro ao gerar insights:', error);
+      setInsights('Erro ao gerar insights. Tente novamente mais tarde.');
+    } finally {
+      setIsLoading(false);
     }
-  }, [selectedYear, selectedMonth, summaryData, transactionsData, completionData]);
+  };
 
   return (
     <div className="mt-8 p-6 bg-white rounded-lg shadow-md">
-      <h2 className="text-xl font-semibold mb-4">Insights e Recomendações</h2>
-      {isLoading ? (
-        <div className="flex justify-center items-center h-32">
-          <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-        </div>
-      ) : (
-        <div className="text-gray-700">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-xl font-semibold">Insights Rápidos</h2>
+        <Button 
+          onClick={generateInsights} 
+          disabled={isLoading || !selectedYear || !selectedMonth}
+          className="bg-blue-600 hover:bg-blue-700 text-white"
+        >
+          {isLoading ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Analisando...
+            </>
+          ) : (
+            "Gerar Insights"
+          )}
+        </Button>
+      </div>
+      
+      {insights ? (
+        <div className="text-gray-700 mt-4 p-4 bg-gray-50 rounded-md">
           {insights.split('\n').map((line, index) => (
             <p key={index} className="mb-2">{line}</p>
           ))}
         </div>
+      ) : (
+        <p className="text-gray-500 italic">
+          Clique no botão para gerar insights sobre seus dados financeiros.
+        </p>
       )}
     </div>
   );
