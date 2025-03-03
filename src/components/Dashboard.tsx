@@ -34,9 +34,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, MoreVertical, Edit, Trash2 } from "lucide-react";
+import { Loader2, MoreVertical, Edit, Trash2, AlertCircle, Calendar } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
-import { Insights } from '@/components/Insights'; // Importe o componente Insights
+import { Insights } from '@/components/Insights';
+import { Badge } from "@/components/ui/badge";
 
 const summaryCards = [
   { title: "Receitas", type: "receita", color: "text-green-600" },
@@ -64,6 +65,7 @@ type Transaction = {
   user_id: string;
   is_completed: boolean;
   completed_at?: string;
+  due_day?: number; // Adicionando o campo due_day
 };
 
 type TransactionsData = {
@@ -97,6 +99,13 @@ type CompletionData = {
   };
 };
 
+// Adicionando uma nova estrutura para acompanhar transações próximas do vencimento
+type DueSoonData = {
+  count: number;
+  amount: number;
+  transactions: Transaction[];
+};
+
 export function Dashboard() {
   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
   const [selectedMonth, setSelectedMonth] = useState(months[new Date().getMonth() + 1]);
@@ -104,6 +113,7 @@ export function Dashboard() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDueSoonDialogOpen, setIsDueSoonDialogOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [summaryData, setSummaryData] = useState<SummaryData>({
@@ -122,13 +132,30 @@ export function Dashboard() {
     despesa: [],
     investimento: [],
   });
+  // Nova estrutura para armazenar transações próximas do vencimento
+  const [dueSoonData, setDueSoonData] = useState<DueSoonData>({
+    count: 0,
+    amount: 0,
+    transactions: [],
+  });
   const [userId, setUserId] = useState<string | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [editFormData, setEditFormData] = useState({
     description: '',
     category: '',
-    amount: ''
+    amount: '',
+    due_day: '' // Adicionando o campo due_day ao formulário de edição
   });
+  
+  // Função para ordenar transações por data de vencimento
+  const sortTransactionsByDueDay = (transactions: Transaction[]) => {
+    return [...transactions].sort((a, b) => {
+      // Se não tiver due_day, coloca no final
+      if (!a.due_day) return 1;
+      if (!b.due_day) return -1;
+      return a.due_day - b.due_day;
+    });
+  };
 
   // Verificar se o usuário está autenticado
   useEffect(() => {
@@ -195,6 +222,16 @@ export function Dashboard() {
         investimento: { count: 0, completed: 0, percentage: 0 },
       };
       
+      // Verificar transações próximas do vencimento (próximos 7 dias)
+      const today = new Date();
+      const currentDay = today.getDate();
+      const currentMonth = today.getMonth() + 1;
+      const currentMonthName = months[currentMonth];
+      const currentYear = today.getFullYear().toString();
+      
+      let dueSoonTransactions: Transaction[] = [];
+      let dueSoonAmount = 0;
+      
       data.forEach((transaction: Transaction) => {
         if (transaction.type === 'receita' || transaction.type === 'despesa' || transaction.type === 'investimento') {
           transactionsByType[transaction.type as keyof TransactionsData].push(transaction);
@@ -212,6 +249,20 @@ export function Dashboard() {
         } else if (transaction.type === 'investimento') {
           totalInvestimento += transaction.amount;
         }
+        
+        // Verificar se a transação está próxima do vencimento
+        if (
+          transaction.due_day && 
+          !transaction.is_completed && 
+          (transaction.type === 'despesa' || transaction.type === 'investimento') &&
+          transaction.month === currentMonthName &&
+          transaction.year === currentYear &&
+          transaction.due_day >= currentDay && 
+          transaction.due_day <= currentDay + 7
+        ) {
+          dueSoonTransactions.push(transaction);
+          dueSoonAmount += transaction.amount;
+        }
       });
       
       const saldo = totalReceita - totalDespesa - totalInvestimento;
@@ -223,6 +274,11 @@ export function Dashboard() {
         completion[type].percentage = count ? Math.round((completed / count) * 100) : 0;
       });
       
+      // Ordenar transações por data de vencimento
+      transactionsByType.receita = sortTransactionsByDueDay(transactionsByType.receita);
+      transactionsByType.despesa = sortTransactionsByDueDay(transactionsByType.despesa);
+      transactionsByType.investimento = sortTransactionsByDueDay(transactionsByType.investimento);
+      
       setTransactionsData(transactionsByType);
       setSummaryData({
         receita: totalReceita,
@@ -231,6 +287,11 @@ export function Dashboard() {
         saldo: saldo,
       });
       setCompletionData(completion);
+      setDueSoonData({
+        count: dueSoonTransactions.length,
+        amount: dueSoonAmount,
+        transactions: dueSoonTransactions.sort((a, b) => (a.due_day || 0) - (b.due_day || 0))
+      });
     } catch (err) {
       console.error('Erro ao processar dados:', err);
       toast({
@@ -294,7 +355,8 @@ export function Dashboard() {
     setEditFormData({
       description: transaction.description || '',
       category: transaction.category,
-      amount: transaction.amount.toString()
+      amount: transaction.amount.toString(),
+      due_day: transaction.due_day ? transaction.due_day.toString() : ''
     });
     setIsEditDialogOpen(true);
   };
@@ -370,6 +432,7 @@ export function Dashboard() {
     
     try {
       const amount = Number(editFormData.amount.replace(',', '.'));
+      const dueDay = editFormData.due_day ? parseInt(editFormData.due_day) : null;
       
       if (isNaN(amount)) {
         toast({
@@ -381,12 +444,23 @@ export function Dashboard() {
         return;
       }
       
+      if (dueDay !== null && (isNaN(dueDay) || dueDay < 1 || dueDay > 31)) {
+        toast({
+          title: "Erro",
+          description: "Por favor, insira um dia de vencimento válido (1-31).",
+          variant: "destructive"
+        });
+        setIsProcessing(false);
+        return;
+      }
+      
       const { error, data } = await supabase
         .from('transactions')
         .update({
           description: editFormData.description,
           category: editFormData.category,
-          amount: amount
+          amount: amount,
+          due_day: dueDay // Atualizando o campo due_day
         })
         .eq('id', selectedTransaction.id)
         .eq('user_id', userId)
@@ -469,6 +543,28 @@ export function Dashboard() {
     const date = new Date(dateString);
     return date.toLocaleDateString('pt-BR');
   };
+  
+  const getDaysToVencimento = (dueDay: number | undefined) => {
+    if (!dueDay) return null;
+    
+    const today = new Date();
+    const currentDay = today.getDate();
+    
+    // Calcular dias restantes
+    return dueDay - currentDay;
+  };
+  
+  const getVencimentoStatus = (dueDay: number | undefined) => {
+    if (!dueDay) return null;
+    
+    const daysLeft = getDaysToVencimento(dueDay);
+    
+    if (daysLeft === null) return null;
+    if (daysLeft < 0) return "atrasado";
+    if (daysLeft === 0) return "hoje";
+    if (daysLeft <= 3) return "proximo";
+    return "normal";
+  };
 
   const checkSupabaseConnection = async () => {
     try {
@@ -499,32 +595,49 @@ export function Dashboard() {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-4 mb-6">
-        <Select value={selectedYear} onValueChange={setSelectedYear}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Selecione o ano" />
-          </SelectTrigger>
-          <SelectContent>
-            {years.map((year) => (
-              <SelectItem key={year} value={String(year)}>
-                {year}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div className="flex flex-wrap gap-4">
+          <Select value={selectedYear} onValueChange={setSelectedYear}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Selecione o ano" />
+            </SelectTrigger>
+            <SelectContent>
+              {years.map((year) => (
+                <SelectItem key={year} value={String(year)}>
+                  {year}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-        <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Selecione o mês" />
-          </SelectTrigger>
-          <SelectContent>
-            {months.map((month) => (
-              <SelectItem key={month} value={month}>
-                {month}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Selecione o mês" />
+            </SelectTrigger>
+            <SelectContent>
+              {months.map((month) => (
+                <SelectItem key={month} value={month}>
+                  {month}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        
+        {/* Alerta de vencimentos próximos */}
+        {dueSoonData.count > 0 && (
+          <div className="w-full sm:w-auto">
+            <Button 
+              variant="outline" 
+              className="w-full border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
+              onClick={() => setIsDueSoonDialogOpen(true)}
+            >
+              <AlertCircle className="mr-2 h-4 w-4" />
+              {dueSoonData.count} pagamento{dueSoonData.count > 1 ? 's' : ''} a vencer 
+              (R$ {dueSoonData.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})
+            </Button>
+          </div>
+        )}
       </div>
 
       {isLoading ? (
@@ -608,8 +721,31 @@ export function Dashboard() {
                         <h3 className={`font-medium ${transaction.is_completed ? 'line-through text-gray-500' : ''}`}>
                           {transaction.description || transaction.category}
                         </h3>
+                        
+                        {/* Badges para vencimento */}
+                        {transaction.due_day && !transaction.is_completed && (
+                          <>
+                            {getVencimentoStatus(transaction.due_day) === "atrasado" && (
+                              <Badge variant="destructive" className="ml-2">Atrasado</Badge>
+                            )}
+                            {getVencimentoStatus(transaction.due_day) === "hoje" && (
+                              <Badge variant="default" className="bg-amber-500 hover:bg-amber-600 ml-2">Vence hoje</Badge>
+                            )}
+                            {getVencimentoStatus(transaction.due_day) === "proximo" && (
+                              <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50 ml-2">
+                                Vence em {getDaysToVencimento(transaction.due_day)} dias
+                              </Badge>
+                            )}
+                          </>
+                        )}
                       </div>
-                      <p className="text-sm text-gray-500">{transaction.category}</p>
+                      <p className="text-sm text-gray-500 mt-1">{transaction.category}</p>
+                      {transaction.due_day && (
+                        <p className="text-xs text-gray-500 mt-1 flex items-center">
+                          <Calendar className="h-3 w-3 mr-1" />
+                          Vencimento: dia {transaction.due_day}
+                        </p>
+                      )}
                     </div>
                     <div className="text-right mr-4">
                       <p className="font-semibold">
@@ -656,111 +792,176 @@ export function Dashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Diálogo de edição de transação */}
-      <Dialog open={isEditDialogOpen} onOpenChange={(open) => !isProcessing && setIsEditDialogOpen(open)}>
+      {/* Diálogo para transações próximas do vencimento */}
+      <Dialog open={isDueSoonDialogOpen} onOpenChange={setIsDueSoonDialogOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-semibold">
+              Pagamentos Próximos do Vencimento
+            </DialogTitle>
+            <DialogDescription>
+              Transações que vencem nos próximos 7 dias
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto">
+            {dueSoonData.transactions.length > 0 ? (
+              dueSoonData.transactions.map((transaction) => (
+                <div 
+                  key={transaction.id} 
+                  className="p-4 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100"
+                >
+                  <div className="flex justify-between items-center">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={transaction.is_completed}
+                          onCheckedChange={() => !isProcessing && toggleTransactionStatus(transaction)}
+                          id={`due-transaction-${transaction.id}`}
+                          disabled={isProcessing}
+                        />
+                        <h3 className="font-medium">
+                          {transaction.description || transaction.category}
+                        </h3>
+                        
+                        {/* Badges para vencimento */}
+                        {getDaysToVencimento(transaction.due_day) === 0 && (
+                          <Badge variant="default" className="bg-amber-500 hover:bg-amber-600 ml-2">Vence hoje</Badge>
+                        )}
+                        {getDaysToVencimento(transaction.due_day) !== 0 && (
+                          <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50 ml-2">
+                            Vence em {getDaysToVencimento(transaction.due_day)} dias
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-500 mt-1">{transaction.category}</p>
+                    </div>
+                    <div className="text-right mr-4">
+                      <p className="font-semibold">
+                        R$ {transaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Vencimento: dia {transaction.due_day}
+                      </p>
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" disabled={isProcessing}>
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleEditClick(transaction)}>
+                          <Edit className="h-4 w-4 mr-2" />
+                          Editar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => !isProcessing && toggleTransactionStatus(transaction)}>
+                          <Checkbox className="h-4 w-4 mr-2" checked={transaction.is_completed} />
+                          Marcar como pago
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-center py-6 text-gray-500">
+                Nenhum pagamento próximo do vencimento encontrado.
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo de edição */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Editar Transação</DialogTitle>
-            <DialogDescription>
-              Modifique os detalhes da transação conforme necessário.
-            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="description">Descrição</Label>
+              <Label htmlFor="edit-description">Descrição</Label>
               <Input
-                id="description"
+                id="edit-description"
                 value={editFormData.description}
                 onChange={(e) => setEditFormData({...editFormData, description: e.target.value})}
-                disabled={isProcessing}
+                placeholder="Descrição da transação"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="category">Categoria</Label>
+              <Label htmlFor="edit-category">Categoria</Label>
               <Input
-                id="category"
+                id="edit-category"
                 value={editFormData.category}
                 onChange={(e) => setEditFormData({...editFormData, category: e.target.value})}
-                disabled={isProcessing}
+                placeholder="Categoria da transação"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="amount">Valor</Label>
+              <Label htmlFor="edit-amount">Valor (R$)</Label>
               <Input
-                id="amount"
+                id="edit-amount"
                 value={editFormData.amount}
                 onChange={(e) => setEditFormData({...editFormData, amount: e.target.value})}
-                disabled={isProcessing}
+                placeholder="Valor da transação"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-due-day">Dia de Vencimento (1-31)</Label>
+              <Input
+                id="edit-due-day"
+                value={editFormData.due_day}
+                onChange={(e) => setEditFormData({...editFormData, due_day: e.target.value})}
+                placeholder="Dia de vencimento"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => setIsEditDialogOpen(false)}
-              disabled={isProcessing}
-            >
-              Cancelar
-            </Button>
-            <Button 
-              onClick={handleEditTransaction}
-              disabled={isProcessing}
-            >
-              {isProcessing ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Salvando...
-                </>
-              ) : (
-                'Salvar Alterações'
-              )}
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleEditTransaction} disabled={isProcessing}>
+              {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Salvar
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Diálogo de confirmação de exclusão */}
-      <Dialog open={isDeleteDialogOpen} onOpenChange={(open) => !isProcessing && setIsDeleteDialogOpen(open)}>
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Confirmar Exclusão</DialogTitle>
-            <DialogDescription>
-              Tem certeza que deseja excluir esta transação? Esta ação não pode ser desfeita.
-            </DialogDescription>
           </DialogHeader>
+          <div className="py-4">
+            <p>Tem certeza que deseja excluir esta transação? Esta ação não pode ser desfeita.</p>
+            {selectedTransaction && (
+              <div className="mt-4 p-4 rounded-lg bg-gray-50">
+                <p><strong>Descrição:</strong> {selectedTransaction.description || selectedTransaction.category}</p>
+                <p><strong>Valor:</strong> R$ {selectedTransaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                <p><strong>Categoria:</strong> {selectedTransaction.category}</p>
+              </div>
+            )}
+          </div>
           <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>Cancelar</Button>
             <Button 
-              variant="outline" 
-              onClick={() => setIsDeleteDialogOpen(false)}
-              disabled={isProcessing}
-            >
-              Cancelar
-            </Button>
-            <Button 
-              variant="destructive"
+              variant="destructive" 
               onClick={handleDeleteTransaction}
               disabled={isProcessing}
             >
-              {isProcessing ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Excluindo...
-                </>
-              ) : (
-                'Confirmar Exclusão'
-              )}
+              {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Excluir
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Componente Insights */}
-      <Insights
-        selectedYear={selectedYear}
-        selectedMonth={selectedMonth}
+      {/* Seção de Insights */}
+      <Insights 
         summaryData={summaryData}
         transactionsData={transactionsData}
-        completionData={completionData}
+        selectedYear={selectedYear}
+        selectedMonth={selectedMonth}
       />
     </div>
   );
