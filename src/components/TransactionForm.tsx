@@ -39,6 +39,14 @@ const months = [
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
 
+// Função para obter o número máximo de dias em um mês específico
+const getDaysInMonth = (month, year) => {
+  // Converte o nome do mês para o índice (0-11)
+  const monthIndex = months.indexOf(month);
+  // Retorna o último dia do mês (passando 0 como dia do próximo mês)
+  return new Date(parseInt(year), monthIndex + 1, 0).getDate();
+};
+
 const defaultCategories = {
   receita: ["Salário", "Freelance", "Investimentos", "Outros"],
   despesa: ["Moradia", "Alimentação", "Transporte", "Saúde", "Lazer", "Outros"],
@@ -63,6 +71,12 @@ const formSchema = z.object({
   }).refine(val => val === '' || (typeof val === 'number' && val >= 1 && val <= 60), {
     message: "A duração deve ser entre 1 e 60 meses"
   }),
+  // Novo campo para o dia de vencimento
+  dueDay: z.string().optional().transform(val => {
+    if (!val || val === '') return null;
+    const parsed = parseInt(val);
+    return isNaN(parsed) ? null : parsed;
+  }),
 });
 
 type Transaction = {
@@ -75,6 +89,7 @@ type Transaction = {
   user_id: string;
   created_at?: Date;
   is_completed?: boolean;
+  due_day?: number | null;
 };
 
 export function TransactionForm() {
@@ -87,6 +102,13 @@ export function TransactionForm() {
   const [currentType, setCurrentType] = useState<"receita" | "despesa" | "investimento">("receita");
   // Add state for recurring months input
   const [recurringMonthsInput, setRecurringMonthsInput] = useState<string>("1");
+  // Add state for due day input
+  const [dueDayInput, setDueDayInput] = useState<string>("");
+  // Adicionar estado para o mês e ano atual selecionados (para validação do dia de vencimento)
+  const [currentMonth, setCurrentMonth] = useState<string>(months[new Date().getMonth()]);
+  const [currentYear, setCurrentYear] = useState<string>(String(new Date().getFullYear()));
+  // Adicionar estado para o máximo de dias no mês
+  const [maxDaysInMonth, setMaxDaysInMonth] = useState<number>(31);
 
   useEffect(() => {
     const checkUser = async () => {
@@ -144,6 +166,7 @@ export function TransactionForm() {
       amount: 0,
       isRecurring: false,
       recurringMonths: "1",
+      dueDay: "",
     },
   });
 
@@ -153,10 +176,35 @@ export function TransactionForm() {
       if (name === 'type' && value.type) {
         setCurrentType(value.type as "receita" | "despesa" | "investimento");
       }
+      
+      // Atualizar mês e ano atual quando mudam, e calcular dias máximos
+      if ((name === 'month' && value.month) || (name === 'year' && value.year)) {
+        if (value.month) setCurrentMonth(value.month);
+        if (value.year) setCurrentYear(value.year);
+        
+        // Recalcular dias máximos no mês
+        if (value.month && value.year) {
+          const maxDays = getDaysInMonth(value.month, value.year);
+          setMaxDaysInMonth(maxDays);
+          
+          // Se o dia de vencimento atual for maior que o máximo, ajuste-o
+          const currentDueDay = form.getValues("dueDay");
+          if (currentDueDay && parseInt(currentDueDay) > maxDays) {
+            form.setValue("dueDay", String(maxDays));
+            setDueDayInput(String(maxDays));
+          }
+        }
+      }
     });
     
     return () => subscription.unsubscribe();
   }, [form.watch]);
+
+  // Calcular dias máximos no mês inicial
+  useEffect(() => {
+    const maxDays = getDaysInMonth(currentMonth, currentYear);
+    setMaxDaysInMonth(maxDays);
+  }, [currentMonth, currentYear]);
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     if (!userId) {
@@ -192,6 +240,8 @@ export function TransactionForm() {
         user_id: userId,
         // Transações sempre não completadas por padrão
         is_completed: false,
+        // Incluir o dia de vencimento, se fornecido
+        due_day: values.dueDay,
       };
       
       if (values.isRecurring) {
@@ -200,12 +250,24 @@ export function TransactionForm() {
         let currentYear = parseInt(values.year);
         
         for (let i = 0; i < recurringMonths; i++) {
+          // Verificar e ajustar o dia de vencimento para cada mês
+          let adjustedDueDay = values.dueDay;
+          
+          if (adjustedDueDay) {
+            const maxDays = getDaysInMonth(months[currentMonth], String(currentYear));
+            if (parseInt(adjustedDueDay) > maxDays) {
+              adjustedDueDay = String(maxDays);
+            }
+          }
+          
           transactions.push({
             ...baseTransaction,
             year: String(currentYear),
             month: months[currentMonth],
             // Todas as transações iniciam como não completadas
             is_completed: false,
+            // Usar o dia de vencimento ajustado
+            due_day: adjustedDueDay,
           });
           
           currentMonth++;
@@ -272,10 +334,13 @@ export function TransactionForm() {
         amount: 0,
         isRecurring: false,
         recurringMonths: "1",
+        dueDay: "",
       });
             
       // Reset the recurring months input
       setRecurringMonthsInput("1");
+      // Reset due day input
+      setDueDayInput("");
       
       transactionEvents.notify();
     } catch (error) {
@@ -331,6 +396,30 @@ export function TransactionForm() {
     
     // Atualizar o valor no formulário
     form.setValue("recurringMonths", e.target.value);
+  };
+
+  // Handle due day input changes
+  const handleDueDayChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    
+    // Permitir campo vazio ou apenas números
+    if (value === '' || /^\d+$/.test(value)) {
+      setDueDayInput(value);
+      
+      // Se tem valor e é um número, verifique se é menor que o máximo de dias no mês
+      if (value !== '' && parseInt(value) > 0) {
+        const dayValue = parseInt(value);
+        if (dayValue > maxDaysInMonth) {
+          // Se for maior, ajuste para o máximo
+          setDueDayInput(String(maxDaysInMonth));
+          form.setValue("dueDay", String(maxDaysInMonth));
+        } else {
+          form.setValue("dueDay", value);
+        }
+      } else {
+        form.setValue("dueDay", value);
+      }
+    }
   };
 
   return (
@@ -469,6 +558,31 @@ export function TransactionForm() {
                   />
                 </FormControl>
                 <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          {/* Novo campo para o dia de vencimento */}
+          <FormField
+            control={form.control}
+            name="dueDay"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Dia de Vencimento (opcional)</FormLabel>
+                <FormControl>
+                  <Input
+                    type="text"
+                    placeholder={`1-${maxDaysInMonth}`}
+                    value={dueDayInput}
+                    onChange={handleDueDayChange}
+                  />
+                </FormControl>
+                <FormMessage />
+                {maxDaysInMonth < 31 && (
+                  <p className="text-xs text-muted-foreground">
+                    Dias válidos para {currentMonth}: 1-{maxDaysInMonth}
+                  </p>
+                )}
               </FormItem>
             )}
           />
