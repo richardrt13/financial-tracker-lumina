@@ -16,6 +16,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Eye, EyeOff, Mail, Lock, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { TermsAndPrivacyDialog } from "@/components/TermsAndPrivacyDialog";
+import { TermsPrivacyLinks } from "@/components/TermsPrivacyLinks";
 
 export default function AuthPage() {
   const [email, setEmail] = useState('');
@@ -260,6 +262,10 @@ export default function AuthPage() {
                   )}
                 </Button>
               </form>
+
+              <div className="text-center text-xs text-gray-500">
+                <TermsPrivacyLinks />
+              </div>
             </CardContent>
           </TabsContent>
           
@@ -337,7 +343,7 @@ export default function AuthPage() {
                 
                 <Alert className="bg-blue-50 border-blue-200">
                   <AlertDescription className="text-xs text-blue-700">
-                    Ao criar uma conta, você concorda com nossos Termos de Serviço e Política de Privacidade.
+                    Ao criar uma conta, você concorda com nossos <TermsAndPrivacyDialog />
                   </AlertDescription>
                 </Alert>
                 
