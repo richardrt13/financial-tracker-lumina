@@ -16,8 +16,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Eye, EyeOff, Mail, Lock, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { TermsAndPrivacyDialog } from "@/components/legal/TermsAndPrivacyDialog";
-import { TermsPrivacyLinks } from "@/components/legal/TermsPrivacyLinks";
+import { TermsAndPrivacyDialog } from "@/components/TermsAndPrivacyDialog";
+import { TermsPrivacyLinks } from "@/components/TermsPrivacyLinks";
 
 export default function AuthPage() {
   const [email, setEmail] = useState('');
@@ -26,6 +26,8 @@ export default function AuthPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [termsDialogOpen, setTermsDialogOpen] = useState(false);
+  
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -173,6 +175,30 @@ export default function AuthPage() {
     }
   };
 
+  const openTermsDialog = () => {
+    setTermsDialogOpen(true);
+  };
+
+  const handleTermsClick = () => {
+    openTermsDialog();
+  };
+
+  const handlePrivacyClick = () => {
+    openTermsDialog();
+  };
+
+  const handleTermsAccept = () => {
+    setTermsDialogOpen(false);
+    toast({
+      title: "Termos aceitos",
+      description: "Você aceitou os termos de serviço e a política de privacidade",
+    });
+  };
+
+  const handleTermsClose = () => {
+    setTermsDialogOpen(false);
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-gray-50 to-gray-100 py-12 px-4 sm:px-6 lg:px-8">
       <Card className="w-full max-w-md shadow-lg">
@@ -262,9 +288,12 @@ export default function AuthPage() {
                   )}
                 </Button>
               </form>
-
-              <div className="text-center text-xs text-gray-500">
-                <TermsPrivacyLinks />
+              
+              <div className="text-center">
+                <TermsPrivacyLinks 
+                  onTermsClick={handleTermsClick}
+                  onPrivacyClick={handlePrivacyClick}
+                />
               </div>
             </CardContent>
           </TabsContent>
@@ -343,7 +372,10 @@ export default function AuthPage() {
                 
                 <Alert className="bg-blue-50 border-blue-200">
                   <AlertDescription className="text-xs text-blue-700">
-                    Ao criar uma conta, você concorda com nossos <TermsAndPrivacyDialog />
+                    <TermsPrivacyLinks 
+                      onTermsClick={handleTermsClick}
+                      onPrivacyClick={handlePrivacyClick}
+                    />
                   </AlertDescription>
                 </Alert>
                 
@@ -387,6 +419,13 @@ export default function AuthPage() {
           </div>
         </CardFooter>
       </Card>
+      
+      {/* Dialog para Termos e Privacidade */}
+      <TermsAndPrivacyDialog 
+        isOpen={termsDialogOpen}
+        onClose={handleTermsClose}
+        onAccept={handleTermsAccept}
+      />
     </div>
   );
 }
