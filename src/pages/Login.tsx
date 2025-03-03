@@ -16,8 +16,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Eye, EyeOff, Mail, Lock, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { TermsAndPrivacyDialog } from "@/components/TermsAndPrivacyDialog";
-import { TermsPrivacyLinks } from "@/components/TermsPrivacyLinks";
+import { TermsAndPrivacyDialog } from "@/components/legal/TermsAndPrivacyDialog";
+import { TermsPrivacyLinks } from "@/components/legal/TermsPrivacyLinks";
 
 export default function AuthPage() {
   const [email, setEmail] = useState('');
