@@ -1,86 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
-import { genai } from '@/lib/genai';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Loader2, Send, MessageSquare, Bot } from "lucide-react";
-import { Avatar } from "@/components/ui/avatar";
-import { toast } from "@/components/ui/use-toast";
-import { ScrollArea } from '@/components/ui/scroll-area';
-
-// Types imported from Dashboard
-type Transaction = {
-  id: number;
-  year: string;
-  month: string;
-  type: string;
-  category: string;
-  amount: number;
-  description?: string;
-  created_at: string;
-  user_id: string;
-  is_completed: boolean;
-  completed_at?: string;
-  due_day?: number;
-};
-
-type TransactionsData = {
-  receita: Transaction[];
-  despesa: Transaction[];
-  investimento: Transaction[];
-};
-
-type SummaryData = {
-  receita: number;
-  despesa: number;
-  investimento: number;
-  saldo: number;
-};
-
-type CompletionData = {
-  receita: {
-    count: number;
-    completed: number;
-    percentage: number;
-  };
-  despesa: {
-    count: number;
-    completed: number;
-    percentage: number;
-  };
-  investimento: {
-    count: number;
-    completed: number;
-    percentage: number;
-  };
-};
-
-type Message = {
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-};
-
-type FinancialAssistantChatProps = {
-  summaryData: SummaryData;
-  transactionsData: TransactionsData;
-  completionData: CompletionData;
-  selectedYear: string;
-  selectedMonth: string;
-  allTransactionsHistory?: Transaction[]; // New prop for complete history
-};
-
 export function FinancialAssistantChat({
   summaryData,
   transactionsData,
   completionData,
-  selectedYear,
-  selectedMonth,
   allTransactionsHistory = []
 }: FinancialAssistantChatProps) {
   const [messages, setMessages] = useState<Message[]>([
@@ -111,7 +32,7 @@ export function FinancialAssistantChat({
   }, [messages]);
 
   const handleSendMessage = async () => {
-    if (!input.trim() || isLoading || !selectedYear || !selectedMonth) return;
+    if (!input.trim() || isLoading) return;
     
     const userMessage = {
       role: 'user' as const,
@@ -216,10 +137,6 @@ export function FinancialAssistantChat({
 
     // Structure final context
     return {
-      currentFilters: {
-        year: selectedYear,
-        month: selectedMonth
-      },
       currentPeriodSummary: summaryData,
       completionStats: completionData,
       currentTransactions,
@@ -334,6 +251,7 @@ export function FinancialAssistantChat({
         <CardTitle className="flex items-center gap-2">
           <Bot className="h-6 w-6 text-primary" />
           Assistente Financeiro
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
@@ -379,22 +297,16 @@ export function FinancialAssistantChat({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              disabled={isLoading || !selectedYear || !selectedMonth}
+              disabled={isLoading}
             />
             <Button 
               onClick={handleSendMessage} 
-              disabled={isLoading || !input.trim() || !selectedYear || !selectedMonth}
+              disabled={isLoading || !input.trim()}
               size="icon"
             >
               {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
             </Button>
           </div>
-          
-          {(!selectedYear || !selectedMonth) && (
-            <p className="text-xs text-orange-500 mt-2">
-              Selecione o ano e mês para começar a conversar com o assistente.
-            </p>
-          )}
         </div>
       </CardContent>
     </Card>
