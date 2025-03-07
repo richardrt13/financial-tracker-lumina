@@ -72,7 +72,6 @@ export function FinancialAssistantChat({
           .from('transactions')
           .select('*')
           .eq('user_id', userId) // Filtrar pelo ID do usuário logado
-          .order('date', { ascending: false })
           .limit(200); // Limitar para evitar sobrecarga
 
         if (error) {
