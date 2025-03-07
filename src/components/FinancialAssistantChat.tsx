@@ -146,7 +146,10 @@ export function FinancialAssistantChat({
       
       Responda de forma concisa, amigável e direta. Se o usuário pedir insights ou análises, foque nas informações mais relevantes baseadas nos dados apresentados. Se possível, ofereça dicas práticas ou sugestões baseadas no comportamento financeiro observado.
 
-      Lembre-se que o saldo é o resultado da receita menos despesas e investimentos e ele não é influciado pela conclusão ou não da transação.
+      Antes de responder, é obrigatório que você se lembre que:
+      1.O saldo é o resultado da receita menos despesas e investimentos 
+      2.As despesas não serão descontadas do saldo e sim da receita
+      3.O saldo considera todas as transações, independentemente da conclusão ou não 
       
       Dados de gastos por categoria:
       ${JSON.stringify(financialContext.categorySpending, null, 2)}
