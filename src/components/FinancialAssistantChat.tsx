@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { genai } from '@/lib/genai';
 import { SummaryData, TransactionsData, CompletionData } from './Dashboard';
-import { Loader2, Send, Bot, Calculator } from 'lucide-react';
+import { Loader2, Send, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -9,10 +9,9 @@ import { Avatar } from '@/components/ui/avatar';
 
 interface FinancialAssistantChatProps {
   selectedYear: string;
-  selectedMonth: string;
-  summaryData: SummaryData;
-  transactionsData: TransactionsData;
-  completionData: CompletionData;
+  summaryData: Record<string, SummaryData>;
+  transactionsData: Record<string, TransactionsData>;
+  completionData: Record<string, CompletionData>;
 }
 
 type Message = {
@@ -21,47 +20,15 @@ type Message = {
   timestamp: Date;
 };
 
-// Tipo para armazenar dados pré-calculados
-type PreCalculatedData = {
-  byPeriod: Record<string, {
-    totalExpenses: number;
-    totalIncome: number;
-    totalInvestments: number;
-    expensesByCategory: Record<string, number>;
-    incomesByCategory: Record<string, number>;
-    investmentsByCategory: Record<string, number>;
-    biggestExpense: { category: string; amount: number } | null;
-    pendingTransactions: number;
-    completedTransactions: number;
-    upcomingDueDates: Array<{ category: string; amount: number; due_day: number }>;
-    balance: number;
-  }>;
-  allTime: {
-    totalExpenses: number;
-    totalIncome: number;
-    totalInvestments: number;
-    expensesByCategory: Record<string, number>;
-    incomesByCategory: Record<string, number>;
-    investmentsByCategory: Record<string, number>;
-    biggestExpense: { category: string; amount: number } | null;
-    pendingTransactions: number;
-    completedTransactions: number;
-    upcomingDueDates: Array<{ category: string; amount: number; due_day: number }>;
-    balance: number;
-  };
-  periods: string[]; // lista de períodos disponíveis no formato "MM/YYYY"
-};
-
 export function FinancialAssistantChat({
   selectedYear,
-  selectedMonth,
   summaryData,
   transactionsData,
   completionData
 }: FinancialAssistantChatProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
-      content: 'Olá! Sou seu assistente financeiro. Como posso ajudar você a entender melhor seus dados financeiros? Você pode perguntar sobre qualquer período ou sobre seus dados gerais.',
+      content: 'Olá! Sou seu assistente financeiro. Como posso ajudar você a entender melhor seus dados financeiros?',
       role: 'assistant',
       timestamp: new Date()
     }
@@ -71,215 +38,6 @@ export function FinancialAssistantChat({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Pré-calcular dados financeiros para todos os períodos e para todos os dados
-  const preCalculatedData = useMemo((): PreCalculatedData => {
-    // Verificar se transactionsData é um objeto válido com arrays
-    if (!transactionsData || typeof transactionsData !== 'object') {
-      console.error("transactionsData não é um objeto válido", transactionsData);
-      return {
-        byPeriod: {},
-        allTime: {
-          totalExpenses: 0,
-          totalIncome: 0,
-          totalInvestments: 0,
-          expensesByCategory: {},
-          incomesByCategory: {},
-          investmentsByCategory: {},
-          biggestExpense: null,
-          pendingTransactions: 0,
-          completedTransactions: 0,
-          upcomingDueDates: [],
-          balance: 0
-        },
-        periods: []
-      };
-    }
-    
-    // Extrair todos os períodos únicos disponíveis nos dados
-    const periods = new Set<string>();
-    
-    // Função para processar e adicionar períodos
-    const addPeriods = (transactions: any[]) => {
-      if (!Array.isArray(transactions)) return;
-      transactions.forEach(t => {
-        if (t.year && t.month) {
-          periods.add(`${t.month}/${t.year}`);
-        }
-      });
-    };
-    
-    // Adicionar todos os períodos de todos os tipos de transações
-    addPeriods(transactionsData.receita || []);
-    addPeriods(transactionsData.despesa || []);
-    addPeriods(transactionsData.investimento || []);
-    
-    const periodsList = Array.from(periods);
-    
-    // Dados por período
-    const byPeriod: Record<string, any> = {};
-    
-    // Dados agregados de todos os períodos
-    const allTimeData = {
-      totalExpenses: 0,
-      totalIncome: 0,
-      totalInvestments: 0,
-      expensesByCategory: {} as Record<string, number>,
-      incomesByCategory: {} as Record<string, number>,
-      investmentsByCategory: {} as Record<string, number>,
-      biggestExpense: { category: '', amount: 0 },
-      pendingTransactions: 0,
-      completedTransactions: 0,
-      upcomingDueDates: [] as Array<{ category: string; amount: number; due_day: number }>,
-      balance: 0
-    };
-    
-    // Processar dados para cada período
-    periodsList.forEach(period => {
-      const [month, year] = period.split('/');
-      
-      // Filtrar transações para este período
-      const filteredIncome = (transactionsData.receita || []).filter(t => 
-        t.year === year && t.month === month
-      );
-      
-      const filteredExpenses = (transactionsData.despesa || []).filter(t => 
-        t.year === year && t.month === month
-      );
-      
-      const filteredInvestments = (transactionsData.investimento || []).filter(t => 
-        t.year === year && t.month === month
-      );
-      
-      // Mapas para armazenar somas por categoria para este período
-      const expensesByCategory: Record<string, number> = {};
-      const incomesByCategory: Record<string, number> = {};
-      const investmentsByCategory: Record<string, number> = {};
-      
-      // Totais para este período
-      let totalExpenses = 0;
-      let totalIncome = 0;
-      let totalInvestments = 0;
-      let biggestExpense = { category: '', amount: 0 };
-      let pendingTransactions = 0;
-      let completedTransactions = 0;
-      
-      // Transações com datas de vencimento próximas para este período
-      const upcomingDueDates: Array<{ category: string; amount: number; due_day: number }> = [];
-      
-      // Processar despesas
-      filteredExpenses.forEach(transaction => {
-        const { category, amount, is_completed, due_day } = transaction;
-        
-        // Contar transações pendentes e completadas
-        if (is_completed === true) {
-          completedTransactions++;
-          allTimeData.completedTransactions++;
-        } else if (is_completed === false) {
-          pendingTransactions++;
-          allTimeData.pendingTransactions++;
-        }
-        
-        totalExpenses += amount;
-        allTimeData.totalExpenses += amount;
-        
-        expensesByCategory[category] = (expensesByCategory[category] || 0) + amount;
-        allTimeData.expensesByCategory[category] = (allTimeData.expensesByCategory[category] || 0) + amount;
-        
-        // Verificar se é a maior despesa do período
-        if (amount > biggestExpense.amount) {
-          biggestExpense = { category, amount };
-        }
-        
-        // Verificar se é a maior despesa de todos os tempos
-        if (amount > allTimeData.biggestExpense.amount) {
-          allTimeData.biggestExpense = { category, amount };
-        }
-        
-        // Adicionar à lista de próximos vencimentos se tiver due_day
-        if (due_day !== null && due_day !== undefined) {
-          upcomingDueDates.push({ category, amount, due_day });
-          allTimeData.upcomingDueDates.push({ category, amount, due_day });
-        }
-      });
-      
-      // Processar receitas
-      filteredIncome.forEach(transaction => {
-        const { category, amount, is_completed } = transaction;
-        
-        // Contar transações pendentes e completadas
-        if (is_completed === true) {
-          completedTransactions++;
-          allTimeData.completedTransactions++;
-        } else if (is_completed === false) {
-          pendingTransactions++;
-          allTimeData.pendingTransactions++;
-        }
-        
-        totalIncome += amount;
-        allTimeData.totalIncome += amount;
-        
-        incomesByCategory[category] = (incomesByCategory[category] || 0) + amount;
-        allTimeData.incomesByCategory[category] = (allTimeData.incomesByCategory[category] || 0) + amount;
-      });
-      
-      // Processar investimentos
-      filteredInvestments.forEach(transaction => {
-        const { category, amount, is_completed } = transaction;
-        
-        // Contar transações pendentes e completadas
-        if (is_completed === true) {
-          completedTransactions++;
-          allTimeData.completedTransactions++;
-        } else if (is_completed === false) {
-          pendingTransactions++;
-          allTimeData.pendingTransactions++;
-        }
-        
-        totalInvestments += amount;
-        allTimeData.totalInvestments += amount;
-        
-        investmentsByCategory[category] = (investmentsByCategory[category] || 0) + amount;
-        allTimeData.investmentsByCategory[category] = (allTimeData.investmentsByCategory[category] || 0) + amount;
-      });
-      
-      // Ordenar vencimentos por dia
-      upcomingDueDates.sort((a, b) => a.due_day - b.due_day);
-      
-      // Calcular saldo para este período
-      const balance = totalIncome - totalExpenses - totalInvestments;
-      
-      // Armazenar dados deste período
-      byPeriod[period] = {
-        totalExpenses,
-        totalIncome,
-        totalInvestments,
-        expensesByCategory,
-        incomesByCategory,
-        investmentsByCategory,
-        biggestExpense: biggestExpense.amount > 0 ? biggestExpense : null,
-        pendingTransactions,
-        completedTransactions,
-        upcomingDueDates,
-        balance
-      };
-    });
-    
-    // Ordenar próximos vencimentos por dia para dados agregados
-    allTimeData.upcomingDueDates.sort((a, b) => a.due_day - b.due_day);
-    
-    // Calcular saldo total
-    allTimeData.balance = allTimeData.totalIncome - allTimeData.totalExpenses - allTimeData.totalInvestments;
-    
-    return {
-      byPeriod,
-      allTime: {
-        ...allTimeData,
-        biggestExpense: allTimeData.biggestExpense.amount > 0 ? allTimeData.biggestExpense : null
-      },
-      periods: periodsList.sort() // Organizar períodos em ordem
-    };
-  }, [transactionsData]);
-
   // Rolar para a mensagem mais recente
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -288,220 +46,6 @@ export function FinancialAssistantChat({
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
-
-  // Verificar se a pergunta menciona um período específico
-  const extractPeriod = (question: string): { month: string; year: string } | null => {
-    const questionLower = question.toLowerCase();
-    
-    // Padrões para detectar mês/ano mencionados na pergunta
-    const monthNames = [
-      'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
-      'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro',
-      'jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'
-    ];
-    
-    // Mapeamento de nomes de mês para números de mês
-    const monthNameToNumber: Record<string, string> = {
-      'janeiro': '01', 'fevereiro': '02', 'março': '03', 'abril': '04',
-      'maio': '05', 'junho': '06', 'julho': '07', 'agosto': '08',
-      'setembro': '09', 'outubro': '10', 'novembro': '11', 'dezembro': '12',
-      'jan': '01', 'fev': '02', 'mar': '03', 'abr': '04', 'mai': '05', 'jun': '06',
-      'jul': '07', 'ago': '08', 'set': '09', 'out': '10', 'nov': '11', 'dez': '12'
-    };
-    
-    // Procurar por padrões como "em janeiro de 2023" ou "no mês 01/2023"
-    for (const monthName of monthNames) {
-      // Padrão: "em [mês] de [ano]"
-      const pattern1 = new RegExp(`(em|no mês de|no mês|para o mês|durante) ${monthName} (de|do ano) (\\d{4})`, 'i');
-      const match1 = questionLower.match(pattern1);
-      if (match1) {
-        return { month: monthNameToNumber[monthName], year: match1[3] };
-      }
-      
-      // Padrão: "em [mês]/[ano]"
-      const pattern2 = new RegExp(`(em|no mês|para|durante) ${monthName}\\/(\\d{4})`, 'i');
-      const match2 = questionLower.match(pattern2);
-      if (match2) {
-        return { month: monthNameToNumber[monthName], year: match2[2] };
-      }
-    }
-    
-    // Padrão: "em MM/YYYY" ou "no mês MM/YYYY"
-    const numericPattern = /(em|no mês|para|durante) (\d{1,2})\/(\d{4})/i;
-    const numericMatch = questionLower.match(numericPattern);
-    if (numericMatch) {
-      // Formatar o mês com zero à esquerda se necessário
-      const month = numericMatch[2].padStart(2, '0');
-      return { month, year: numericMatch[3] };
-    }
-    
-    return null;
-  };
-
-  // Verificar se a pergunta é sobre cálculos financeiros e responder diretamente
-  const getDirectAnswer = (question: string): string | null => {
-    const questionLower = question.toLowerCase();
-    
-    // Padrões comuns de perguntas sobre valores
-    const expensePattern = /quanto (eu )?(gastei|gasto|foi gasto)/;
-    const incomePattern = /quanto (eu )?(ganhei|ganho|recebi|foi recebido)/;
-    const investmentPattern = /quanto (eu )?(investi|foi investido)/;
-    const balancePattern = /(qual (é|foi) (o|meu) )?(saldo|balanço|balança)/;
-    const categoryPattern = /(em|com|na categoria) ([a-záéíóúâêîôûãõçà ]+)/i;
-    
-    let answer: string | null = null;
-    
-    try {
-      // Extrair período mencionado na pergunta, se houver
-      const periodFromQuestion = extractPeriod(question);
-      
-      // Determinar qual conjunto de dados usar baseado na pergunta
-      let dataToUse;
-      let periodLabel;
-      
-      if (periodFromQuestion) {
-        const period = `${periodFromQuestion.month}/${periodFromQuestion.year}`;
-        
-        // Verificar se temos dados para este período
-        if (preCalculatedData.byPeriod[period]) {
-          dataToUse = preCalculatedData.byPeriod[period];
-          periodLabel = period;
-        } else {
-          // Se o período não existe nos dados, informar o usuário
-          return `Não tenho dados para o período ${period}. Os períodos disponíveis são: ${preCalculatedData.periods.join(', ')}.`;
-        }
-      } else {
-        // Se não foi especificado um período, usar dados agregados
-        dataToUse = preCalculatedData.allTime;
-        periodLabel = "todos os períodos";
-      }
-      
-      // Responder sobre despesas
-      if (expensePattern.test(questionLower)) {
-        let amount = dataToUse.totalExpenses;
-        let category = "";
-        
-        // Verificar se a pergunta é sobre categoria específica
-        const categoryMatch = questionLower.match(categoryPattern);
-        if (categoryMatch && categoryMatch[2]) {
-          category = categoryMatch[2].trim();
-          
-          // Encontrar a categoria mais próxima
-          const categories = Object.keys(dataToUse.expensesByCategory);
-          const matchedCategory = categories.find(c => 
-            c.toLowerCase() === category || 
-            c.toLowerCase().includes(category) ||
-            category.includes(c.toLowerCase())
-          );
-          
-          if (matchedCategory) {
-            amount = dataToUse.expensesByCategory[matchedCategory];
-            if (periodFromQuestion) {
-              answer = `Em ${periodLabel}, você gastou R$ ${amount.toFixed(2)} em ${matchedCategory}.`;
-            } else {
-              answer = `No total, você gastou R$ ${amount.toFixed(2)} em ${matchedCategory} considerando todos os seus dados.`;
-            }
-          }
-        }
-        
-        if (!answer) {
-          if (periodFromQuestion) {
-            answer = `Em ${periodLabel}, seu gasto total foi de R$ ${amount.toFixed(2)}.`;
-          } else {
-            answer = `Seu gasto total considerando todos os períodos foi de R$ ${amount.toFixed(2)}.`;
-          }
-        }
-      }
-      
-      // Responder sobre receitas
-      else if (incomePattern.test(questionLower)) {
-        let amount = dataToUse.totalIncome;
-        let category = "";
-        
-        // Verificar se a pergunta é sobre categoria específica
-        const categoryMatch = questionLower.match(categoryPattern);
-        if (categoryMatch && categoryMatch[2]) {
-          category = categoryMatch[2].trim();
-          
-          // Encontrar a categoria mais próxima
-          const categories = Object.keys(dataToUse.incomesByCategory);
-          const matchedCategory = categories.find(c => 
-            c.toLowerCase() === category || 
-            c.toLowerCase().includes(category) ||
-            category.includes(c.toLowerCase())
-          );
-          
-          if (matchedCategory) {
-            amount = dataToUse.incomesByCategory[matchedCategory];
-            if (periodFromQuestion) {
-              answer = `Em ${periodLabel}, você recebeu R$ ${amount.toFixed(2)} em ${matchedCategory}.`;
-            } else {
-              answer = `No total, você recebeu R$ ${amount.toFixed(2)} em ${matchedCategory} considerando todos os seus dados.`;
-            }
-          }
-        }
-        
-        if (!answer) {
-          if (periodFromQuestion) {
-            answer = `Em ${periodLabel}, sua receita total foi de R$ ${amount.toFixed(2)}.`;
-          } else {
-            answer = `Sua receita total considerando todos os períodos foi de R$ ${amount.toFixed(2)}.`;
-          }
-        }
-      }
-      
-      // Responder sobre investimentos
-      else if (investmentPattern.test(questionLower)) {
-        let amount = dataToUse.totalInvestments;
-        let category = "";
-        
-        // Verificar se a pergunta é sobre categoria específica
-        const categoryMatch = questionLower.match(categoryPattern);
-        if (categoryMatch && categoryMatch[2]) {
-          category = categoryMatch[2].trim();
-          
-          // Encontrar a categoria mais próxima
-          const categories = Object.keys(dataToUse.investmentsByCategory);
-          const matchedCategory = categories.find(c => 
-            c.toLowerCase() === category || 
-            c.toLowerCase().includes(category) ||
-            category.includes(c.toLowerCase())
-          );
-          
-          if (matchedCategory) {
-            amount = dataToUse.investmentsByCategory[matchedCategory];
-            if (periodFromQuestion) {
-              answer = `Em ${periodLabel}, você investiu R$ ${amount.toFixed(2)} em ${matchedCategory}.`;
-            } else {
-              answer = `No total, você investiu R$ ${amount.toFixed(2)} em ${matchedCategory} considerando todos os seus dados.`;
-            }
-          }
-        }
-        
-        if (!answer) {
-          if (periodFromQuestion) {
-            answer = `Em ${periodLabel}, seu investimento total foi de R$ ${amount.toFixed(2)}.`;
-          } else {
-            answer = `Seu investimento total considerando todos os períodos foi de R$ ${amount.toFixed(2)}.`;
-          }
-        }
-      }
-      
-      // Responder sobre saldo
-      else if (balancePattern.test(questionLower)) {
-        if (periodFromQuestion) {
-          answer = `Em ${periodLabel}, seu saldo foi de R$ ${dataToUse.balance.toFixed(2)} (receitas - despesas - investimentos).`;
-        } else {
-          answer = `Seu saldo considerando todos os períodos foi de R$ ${dataToUse.balance.toFixed(2)} (total de receitas - total de despesas - total de investimentos).`;
-        }
-      }
-      
-      return answer;
-    } catch (error) {
-      console.error("Erro ao calcular resposta direta:", error);
-      return null;
-    }
-  };
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
@@ -518,58 +62,14 @@ export function FinancialAssistantChat({
     setIsLoading(true);
 
     try {
-      // Verificar se temos uma resposta direta calculada
-      const directAnswer = getDirectAnswer(input.trim());
-      
-      if (directAnswer) {
-        // Se temos uma resposta direta baseada em cálculos, usá-la imediatamente
-        const assistantMessage: Message = {
-          content: directAnswer,
-          role: 'assistant',
-          timestamp: new Date()
-        };
-        
-        setMessages(prev => [...prev, assistantMessage]);
-        setIsLoading(false);
-        return;
-      }
-      
-      // Extrair período mencionado na pergunta, se houver
-      const periodFromQuestion = extractPeriod(input.trim());
-      
-      // Preparar dados para o contexto
-      let selectedTransactions: any;
-      
-      if (periodFromQuestion) {
-        // Se a pergunta menciona um período específico, filtrar as transações
-        selectedTransactions = {
-          receita: (transactionsData.receita || [])
-            .filter(t => t.year === periodFromQuestion.year && t.month === periodFromQuestion.month)
-            .slice(0, 10),
-          despesa: (transactionsData.despesa || [])
-            .filter(t => t.year === periodFromQuestion.year && t.month === periodFromQuestion.month)
-            .slice(0, 10),
-          investimento: (transactionsData.investimento || [])
-            .filter(t => t.year === periodFromQuestion.year && t.month === periodFromQuestion.month)
-            .slice(0, 10)
-        };
-      } else {
-        // Se não, usar uma amostra de todas as transações (limitar para não sobrecarregar)
-        selectedTransactions = {
-          receita: (transactionsData.receita || []).slice(0, 10),
-          despesa: (transactionsData.despesa || []).slice(0, 10),
-          investimento: (transactionsData.investimento || []).slice(0, 10)
-        };
-      }
-      
-      // Preparar contexto financeiro
+      // Preparar contexto com os dados financeiros completos
       const financialContext = {
-        preCalculated: preCalculatedData,
-        transactions: selectedTransactions,
-        // Se a pergunta menciona um período específico, incluí-lo no contexto
-        specificPeriod: periodFromQuestion ? 
-          `${periodFromQuestion.month}/${periodFromQuestion.year}` : 
-          null
+        year: selectedYear,
+        allMonthsData: {
+          summary: summaryData,
+          transactions: transactionsData,
+          completion: completionData
+        }
       };
 
       // Histórico de mensagens para contexto
@@ -578,29 +78,29 @@ export function FinancialAssistantChat({
         role: msg.role
       }));
 
-      // Criar o prompt com instruções específicas
+      // Criar o prompt melhorado
       const model = genai.getGenerativeModel({ model: "gemini-1.5-flash" });
       
       const prompt = `
-      Você é um assistente financeiro pessoal preciso e matemáticamente exato. 
+      Você é um assistente financeiro pessoal especializado em análise de dados. Analise cuidadosamente os dados financeiros do usuário:
       
-      DADOS FINANCEIROS DO USUÁRIO:
-      ${JSON.stringify(financialContext, null, 2)}
+      Contexto financeiro detalhado: ${JSON.stringify(financialContext, null, 2)}
       
-      INSTRUÇÕES ESPECÍFICAS:
-      1. Ao responder sobre valores, use SEMPRE os valores pré-calculados no objeto 'preCalculated'.
-      2. NÃO faça cálculos por conta própria quando os valores já estiverem calculados.
-      3. Se a pergunta mencionar um período específico, use os dados desse período.
-      4. Se a pergunta não mencionar um período específico, use os dados agregados em 'allTime'.
-      5. Informe ao usuário sobre quais períodos você tem dados disponíveis, se relevante.
-      6. Os períodos disponíveis são: ${preCalculatedData.periods.join(', ')}
+      Conversa anterior:
+      ${chatHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')}
       
-      CONVERSA ANTERIOR:
-      ${chatHistory.map(msg => `${msg.role.toUpperCase()}: ${msg.content}`).join('\n')}
+      Pergunta atual do usuário: ${input}
       
-      PERGUNTA ATUAL DO USUÁRIO: ${input}
+      Instruções importantes para cálculos precisos:
+      1. Quando fizer cálculos numéricos, mostre detalhadamente como chegou ao resultado
+      2. Sempre verifique se os valores estão na mesma unidade antes de somá-los ou compará-los
+      3. Para médias e tendências, especifique o período considerado
+      4. Quando calcular percentagens, mostre os valores base utilizados
+      5. Se mencionar economia ou excesso de gastos, utilize sempre valores absolutos como referência
+      6. Considere sazonalidades nos gastos ao fazer comparações entre meses
+      7. Verifique duplamente todos os cálculos matemáticos antes de apresentar conclusões
       
-      Responda de forma concisa, amigável e MATEMATICAMENTE PRECISA. Sempre verifique os valores nos dados pré-calculados antes de responder sobre quantias financeiras.
+      Responda de forma concisa, amigável e direta. Se o usuário pedir insights ou análises, foque nas informações mais relevantes baseadas nos dados apresentados. Ofereça dicas práticas ou sugestões baseadas no comportamento financeiro observado.
       `;
       
       const result = await model.generateContent(prompt);
@@ -640,9 +140,6 @@ export function FinancialAssistantChat({
     }
   };
 
-  // Contar períodos disponíveis
-  const periodCount = preCalculatedData.periods.length;
-
   return (
     <div className="mt-8 p-6 bg-white rounded-lg shadow-md flex flex-col h-[500px]">
       <div className="flex justify-between items-center mb-4">
@@ -650,14 +147,15 @@ export function FinancialAssistantChat({
           <Bot className="mr-2 h-5 w-5 text-blue-600" />
           Assistente Financeiro
         </h2>
-        <div className="flex items-center">
-          <Calculator className="h-4 w-4 mr-1 text-green-600" />
+        {selectedYear ? (
           <span className="text-sm text-gray-500">
-            {periodCount > 0 ? 
-              `${periodCount} períodos disponíveis` : 
-              "Nenhum dado disponível"}
+            Dados: Ano {selectedYear} (todos os meses)
           </span>
-        </div>
+        ) : (
+          <span className="text-sm text-orange-500">
+            Selecione o ano para análises precisas
+          </span>
+        )}
       </div>
 
       <ScrollArea className="flex-grow mb-4 pr-4">
@@ -700,12 +198,12 @@ export function FinancialAssistantChat({
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Pergunte sobre seus dados financeiros..."
-            disabled={isLoading || periodCount === 0}
+            disabled={isLoading || !selectedYear}
             className="flex-grow"
           />
           <Button 
             onClick={sendMessage}
-            disabled={isLoading || !input.trim() || periodCount === 0}
+            disabled={isLoading || !input.trim() || !selectedYear}
             className="bg-blue-600 hover:bg-blue-700"
           >
             {isLoading ? (
@@ -715,9 +213,9 @@ export function FinancialAssistantChat({
             )}
           </Button>
         </div>
-        {periodCount === 0 && (
+        {!selectedYear && (
           <p className="text-xs text-orange-500 mt-2">
-            Não existem dados financeiros disponíveis para análise.
+            Selecione o ano para começar a conversar com o assistente.
           </p>
         )}
       </div>
