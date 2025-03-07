@@ -11,7 +11,7 @@ type Transaction = {
   id: number;
   year: string;
   month: string;
-  type: string;
+  type: 'receita' | 'despesa' | 'investimento'; // Tipos em português conforme solicitado
   category: string;
   amount: number;
   description?: string;
@@ -34,6 +34,7 @@ type FinancialData = {
   typeSummary: Record<string, { count: number; total: number }>;
   totalIncome: number;
   totalExpense: number;
+  totalInvestment: number; // Adicionado para investimentos
   netBalance: number;
   completionRate: number;
 };
@@ -110,6 +111,7 @@ export function FinancialAssistantChat() {
       
       let totalIncome = 0;
       let totalExpense = 0;
+      let totalInvestment = 0; // Adicionado para investimentos
       let completedCount = 0;
       
       typedTransactions.forEach(transaction => {
@@ -120,7 +122,7 @@ export function FinancialAssistantChat() {
         categorySummary[transaction.category].count += 1;
         categorySummary[transaction.category].total += transaction.amount;
         
-        // Resumo por tipo (receita/despesa)
+        // Resumo por tipo (receita/despesa/investimento)
         if (!typeSummary[transaction.type]) {
           typeSummary[transaction.type] = { count: 0, total: 0 };
         }
@@ -128,10 +130,12 @@ export function FinancialAssistantChat() {
         typeSummary[transaction.type].total += transaction.amount;
         
         // Calcular totais
-        if (transaction.type === 'income') {
+        if (transaction.type === 'receita') {
           totalIncome += transaction.amount;
-        } else if (transaction.type === 'expense') {
+        } else if (transaction.type === 'despesa') {
           totalExpense += transaction.amount;
+        } else if (transaction.type === 'investimento') {
+          totalInvestment += transaction.amount;
         }
         
         // Contar transações concluídas
@@ -141,6 +145,7 @@ export function FinancialAssistantChat() {
       });
       
       // Calcular saldo líquido e taxa de conclusão
+      // O saldo considera receitas menos despesas (investimentos são calculados separadamente)
       const netBalance = totalIncome - totalExpense;
       const completionRate = (completedCount / typedTransactions.length) * 100;
       
@@ -151,6 +156,7 @@ export function FinancialAssistantChat() {
         typeSummary,
         totalIncome,
         totalExpense,
+        totalInvestment,
         netBalance,
         completionRate
       });
@@ -192,8 +198,9 @@ export function FinancialAssistantChat() {
         
         if (!monthlyData[year][month]) {
           monthlyData[year][month] = {
-            income: 0,
-            expense: 0,
+            receita: 0,
+            despesa: 0,
+            investimento: 0, // Adicionado para investimentos
             net: 0,
             categories: {},
             transactionCount: 0,
@@ -203,8 +210,9 @@ export function FinancialAssistantChat() {
         
         if (!yearlyData[year]) {
           yearlyData[year] = {
-            income: 0,
-            expense: 0,
+            receita: 0,
+            despesa: 0,
+            investimento: 0, // Adicionado para investimentos
             net: 0,
             categories: {},
             transactionCount: 0,
@@ -214,11 +222,7 @@ export function FinancialAssistantChat() {
         
         // Atualizar dados mensais
         const monthData = monthlyData[year][month];
-        if (transaction.type === 'income') {
-          monthData.income += transaction.amount;
-        } else if (transaction.type === 'expense') {
-          monthData.expense += transaction.amount;
-        }
+        monthData[transaction.type] += transaction.amount; // Usa diretamente o tipo da transação
         
         // Atualizar categorias mensais
         if (!monthData.categories[transaction.category]) {
@@ -232,16 +236,12 @@ export function FinancialAssistantChat() {
           monthData.completedCount += 1;
         }
         
-        // Recalcular saldo líquido mensal
-        monthData.net = monthData.income - monthData.expense;
+        // Recalcular saldo líquido mensal (receitas - despesas)
+        monthData.net = monthData.receita - monthData.despesa;
         
-        // Atualizar dados anuais da mesma forma
+        // Atualizar dados anuais
         const yearData = yearlyData[year];
-        if (transaction.type === 'income') {
-          yearData.income += transaction.amount;
-        } else if (transaction.type === 'expense') {
-          yearData.expense += transaction.amount;
-        }
+        yearData[transaction.type] += transaction.amount; // Usa diretamente o tipo da transação
         
         // Atualizar categorias anuais
         if (!yearData.categories[transaction.category]) {
@@ -255,8 +255,8 @@ export function FinancialAssistantChat() {
           yearData.completedCount += 1;
         }
         
-        // Recalcular saldo líquido anual
-        yearData.net = yearData.income - yearData.expense;
+        // Recalcular saldo líquido anual (receitas - despesas)
+        yearData.net = yearData.receita - yearData.despesa;
       });
       
       // Calcular tendências e padrões
@@ -267,6 +267,7 @@ export function FinancialAssistantChat() {
         overview: {
           totalIncome: financialData.totalIncome,
           totalExpense: financialData.totalExpense,
+          totalInvestment: financialData.totalInvestment, // Adicionado para investimentos
           netBalance: financialData.netBalance,
           completionRate: financialData.completionRate,
           categorySummary: financialData.categorySummary,
@@ -308,6 +309,10 @@ export function FinancialAssistantChat() {
       8. Verifique duplamente todos os cálculos matemáticos antes de apresentar conclusões
       9. Identifique oportunidades de economia ou otimização financeira
       10. Considere o contexto temporal (mês e ano) ao fazer comparações entre períodos
+      11. Considere os três tipos de transações em sua análise: receita, despesa e investimento
+      12. Ao analisar investimentos, considere-os separadamente das despesas regulares
+      13. Forneça insights sobre a distribuição entre gastos necessários, discricionários e investimentos
+      14. Identifique tendências na proporção de renda alocada para investimentos ao longo do tempo
       
       Responda de forma concisa, amigável e direta. Se o usuário pedir insights ou análises, foque nas informações mais relevantes baseadas nos dados apresentados. Ofereça dicas práticas ou sugestões baseadas no comportamento financeiro observado ao longo de todo o histórico.
       `;
@@ -345,13 +350,14 @@ export function FinancialAssistantChat() {
   // Função para analisar tendências nos dados
   const analyzeTrends = (monthlyData: Record<string, Record<string, any>>) => {
     const trends = {
-      incomeGrowth: {} as Record<string, number>,
-      expenseGrowth: {} as Record<string, number>,
+      receitaGrowth: {} as Record<string, number>,
+      despesaGrowth: {} as Record<string, number>,
+      investimentoGrowth: {} as Record<string, number>, // Adicionado para investimentos
       topCategories: {} as Record<string, string[]>,
       seasonalPatterns: {} as Record<string, any>
     };
     
-    // Analisar crescimento de receita e despesa
+    // Analisar crescimento de receita, despesa e investimento
     Object.keys(monthlyData).forEach(year => {
       const monthsData = monthlyData[year];
       const sortedMonths = Object.keys(monthsData).sort();
@@ -368,17 +374,24 @@ export function FinancialAssistantChat() {
           const key = `${year}-${currentMonth}`;
           
           // Crescimento da receita
-          if (previousData.income > 0) {
-            trends.incomeGrowth[key] = ((currentData.income - previousData.income) / previousData.income) * 100;
+          if (previousData.receita > 0) {
+            trends.receitaGrowth[key] = ((currentData.receita - previousData.receita) / previousData.receita) * 100;
           } else {
-            trends.incomeGrowth[key] = currentData.income > 0 ? 100 : 0;
+            trends.receitaGrowth[key] = currentData.receita > 0 ? 100 : 0;
           }
           
           // Crescimento da despesa
-          if (previousData.expense > 0) {
-            trends.expomeGrowth[key] = ((currentData.expense - previousData.expense) / previousData.expense) * 100;
+          if (previousData.despesa > 0) {
+            trends.despesaGrowth[key] = ((currentData.despesa - previousData.despesa) / previousData.despesa) * 100;
           } else {
-            trends.expenseGrowth[key] = currentData.expense > 0 ? 100 : 0;
+            trends.despesaGrowth[key] = currentData.despesa > 0 ? 100 : 0;
+          }
+          
+          // Crescimento do investimento
+          if (previousData.investimento > 0) {
+            trends.investimentoGrowth[key] = ((currentData.investimento - previousData.investimento) / previousData.investimento) * 100;
+          } else {
+            trends.investimentoGrowth[key] = currentData.investimento > 0 ? 100 : 0;
           }
         }
       }
@@ -396,35 +409,40 @@ export function FinancialAssistantChat() {
     });
     
     // Identificar padrões sazonais (ao longo dos anos)
-    const monthlyAverages: Record<string, { income: number[], expense: number[] }> = {};
+    const monthlyAverages: Record<string, { receita: number[], despesa: number[], investimento: number[] }> = {};
     
     // Inicializar estrutura para cada mês
     ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'].forEach(month => {
-      monthlyAverages[month] = { income: [], expense: [] };
+      monthlyAverages[month] = { receita: [], despesa: [], investimento: [] };
     });
     
     // Agrupar dados por mês através dos anos
     Object.keys(monthlyData).forEach(year => {
       Object.keys(monthlyData[year]).forEach(month => {
         const data = monthlyData[year][month];
-        monthlyAverages[month].income.push(data.income);
-        monthlyAverages[month].expense.push(data.expense);
+        monthlyAverages[month].receita.push(data.receita);
+        monthlyAverages[month].despesa.push(data.despesa);
+        monthlyAverages[month].investimento.push(data.investimento);
       });
     });
     
     // Calcular médias mensais
     Object.keys(monthlyAverages).forEach(month => {
-      const incomeValues = monthlyAverages[month].income;
-      const expenseValues = monthlyAverages[month].expense;
+      const receitaValues = monthlyAverages[month].receita;
+      const despesaValues = monthlyAverages[month].despesa;
+      const investimentoValues = monthlyAverages[month].investimento;
       
-      if (incomeValues.length > 0) {
-        const avgIncome = incomeValues.reduce((sum, val) => sum + val, 0) / incomeValues.length;
-        const avgExpense = expenseValues.reduce((sum, val) => sum + val, 0) / expenseValues.length;
+      if (receitaValues.length > 0) {
+        const avgReceita = receitaValues.reduce((sum, val) => sum + val, 0) / receitaValues.length;
+        const avgDespesa = despesaValues.reduce((sum, val) => sum + val, 0) / despesaValues.length;
+        const avgInvestimento = investimentoValues.reduce((sum, val) => sum + val, 0) / investimentoValues.length;
         
         trends.seasonalPatterns[month] = {
-          averageIncome: avgIncome,
-          averageExpense: avgExpense,
-          averageNet: avgIncome - avgExpense
+          averageReceita: avgReceita,
+          averageDespesa: avgDespesa,
+          averageInvestimento: avgInvestimento,
+          averageNet: avgReceita - avgDespesa,
+          investmentRatio: avgInvestimento > 0 && avgReceita > 0 ? (avgInvestimento / avgReceita) * 100 : 0
         };
       }
     });
