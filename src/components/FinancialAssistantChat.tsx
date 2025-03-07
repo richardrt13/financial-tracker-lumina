@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar } from '@/components/ui/avatar';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth'; // Pressuponho que você tenha um hook de autenticação
 
 interface FinancialAssistantChatProps {
   summaryData: SummaryData;
@@ -35,25 +36,35 @@ export function FinancialAssistantChat({
   const [transactionsData, setTransactionsData] = useState<TransactionsData>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { user } = useAuth(); // Obter o usuário atual
 
-  // Buscar transações do Supabase e organizá-las
+  // Buscar transações do Supabase filtrando pelo user_id
   useEffect(() => {
     const fetchTransactions = async () => {
+      if (!user || !user.id) {
+        console.error('Usuário não autenticado ou sem ID');
+        return;
+      }
+
       const { data, error } = await supabase
         .from('transactions')
         .select('*')
+        .eq('user_id', user.id) // Filtrar pelo ID do usuário logado
         .order('date', { ascending: false })
-        .limit(100); // Limitar para transações mais recentes
+        .limit(200); // Limitar para evitar sobrecarga
 
       if (error) {
         console.error('Erro ao buscar transações:', error);
       } else {
         setTransactionsData(data);
+        console.log(`Carregadas ${data.length} transações para o usuário ID: ${user.id}`);
       }
     };
 
-    fetchTransactions();
-  }, []);
+    if (user) {
+      fetchTransactions();
+    }
+  }, [user]);
 
   // Rolar para a mensagem mais recente
   const scrollToBottom = () => {
@@ -66,6 +77,14 @@ export function FinancialAssistantChat({
 
   // Processar transações para análise
   const processTransactionsForAnalysis = (transactions: TransactionsData) => {
+    if (!transactions || transactions.length === 0) {
+      return {
+        categorySummary: {},
+        monthlySpending: {},
+        recentTransactions: []
+      };
+    }
+
     // Agrupar transações por categoria
     const categorySummary = transactions.reduce((acc, transaction) => {
       const category = transaction.category || 'Sem categoria';
@@ -89,26 +108,40 @@ export function FinancialAssistantChat({
 
     // Calcular gastos mensais (últimos 3 meses)
     const today = new Date();
-    const monthsData: Record<string, number> = {};
+    const monthsData: Record<string, { total: number, income: number, expenses: number }> = {};
     
     for (let i = 0; i < 3; i++) {
       const monthDate = new Date(today);
       monthDate.setMonth(today.getMonth() - i);
       const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
-      monthsData[monthKey] = 0;
+      monthsData[monthKey] = { total: 0, income: 0, expenses: 0 };
     }
 
     transactions.forEach(transaction => {
       const txDate = new Date(transaction.date);
       const monthKey = `${txDate.getFullYear()}-${String(txDate.getMonth() + 1).padStart(2, '0')}`;
       if (monthsData[monthKey] !== undefined) {
-        monthsData[monthKey] += transaction.amount;
+        monthsData[monthKey].total += transaction.amount;
+        
+        // Separar receitas (valores positivos) e despesas (valores negativos)
+        if (transaction.amount > 0) {
+          monthsData[monthKey].income += transaction.amount;
+        } else {
+          monthsData[monthKey].expenses += Math.abs(transaction.amount);
+        }
       }
     });
+
+    // Calcular saldo de cada mês
+    const balanceByMonth = Object.entries(monthsData).reduce((acc, [month, data]) => {
+      acc[month] = data.income - data.expenses;
+      return acc;
+    }, {} as Record<string, number>);
 
     return {
       categorySummary,
       monthlySpending: monthsData,
+      balanceByMonth,
       recentTransactions: transactions.slice(0, 10) // 10 transações mais recentes
     };
   };
@@ -128,6 +161,11 @@ export function FinancialAssistantChat({
     setIsLoading(true);
 
     try {
+      // Verificar se temos transações para analisar
+      if (!transactionsData || transactionsData.length === 0) {
+        throw new Error('Não há transações disponíveis para análise');
+      }
+
       // Processar dados de transações para análise mais eficiente
       const processedTransactions = processTransactionsForAnalysis(transactionsData);
       
@@ -136,7 +174,8 @@ export function FinancialAssistantChat({
         summary: summaryData,
         transactionsAnalysis: processedTransactions,
         completion: completionData,
-        totalTransactions: transactionsData.length
+        totalTransactions: transactionsData.length,
+        userId: user?.id
       };
 
       // Histórico de mensagens para contexto (limitado às últimas 5 para manter relevância)
@@ -150,7 +189,7 @@ export function FinancialAssistantChat({
       const model = genai.getGenerativeModel({ model: "gemini-1.5-flash" });
       
       const prompt = `
-      Você é um assistente financeiro pessoal especializado em análise de dados financeiros. Sua tarefa é fornecer insights precisos e úteis com base nos dados financeiros do usuário.
+      Você é um assistente financeiro pessoal especializado em análise de dados financeiros. Sua tarefa é fornecer insights precisos e úteis com base nos dados financeiros do usuário ${user?.id}.
 
       ### DADOS FINANCEIROS DO USUÁRIO
       
@@ -159,10 +198,11 @@ export function FinancialAssistantChat({
       
       # Análise de Transações
       - Total de transações: ${financialContext.totalTransactions}
-      - Gastos por categoria: ${JSON.stringify(processedTransactions.categorySummary, null, 2)}
-      - Gastos mensais: ${JSON.stringify(processedTransactions.monthlySpending, null, 2)}
+      - Transações por categoria: ${JSON.stringify(processedTransactions.categorySummary, null, 2)}
+      - Gastos e receitas mensais: ${JSON.stringify(processedTransactions.monthlySpending, null, 2)}
+      - Saldo mensal: ${JSON.stringify(processedTransactions.balanceByMonth, null, 2)}
       
-      # Transações Recentes
+      # Transações Recentes (10 últimas)
       ${JSON.stringify(processedTransactions.recentTransactions, null, 2)}
       
       # Metas Financeiras
@@ -181,6 +221,7 @@ export function FinancialAssistantChat({
       4. Inclua números e percentuais específicos quando relevante.
       5. Se não tiver dados suficientes para responder com precisão, admita isso claramente.
       6. Mantenha um tom amigável e profissional.
+      7. IMPORTANTE: Certifique-se de que está analisando apenas as transações do usuário ${user?.id}.
       
       Sua resposta:
       `;
@@ -199,11 +240,20 @@ export function FinancialAssistantChat({
     } catch (error) {
       console.error('Erro ao processar mensagem:', error);
       
-      const errorMessage: Message = {
-        content: 'Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente.',
-        role: 'assistant',
-        timestamp: new Date()
-      };
+      let errorMessage: Message;
+      if (error instanceof Error && error.message === 'Não há transações disponíveis para análise') {
+        errorMessage = {
+          content: 'Não consigo encontrar suas transações financeiras. Verifique se você está logado corretamente ou se já cadastrou alguma transação.',
+          role: 'assistant',
+          timestamp: new Date()
+        };
+      } else {
+        errorMessage = {
+          content: 'Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente.',
+          role: 'assistant',
+          timestamp: new Date()
+        };
+      }
 
       setMessages(prev => [...prev, errorMessage]);
     } finally {
@@ -229,6 +279,11 @@ export function FinancialAssistantChat({
           <Bot className="mr-2 h-5 w-5 text-blue-600" />
           Assistente Financeiro
         </h2>
+        {transactionsData && (
+          <div className="text-sm text-gray-500">
+            {transactionsData.length} transações carregadas
+          </div>
+        )}
       </div>
 
       <ScrollArea className="flex-grow mb-4 pr-4">
