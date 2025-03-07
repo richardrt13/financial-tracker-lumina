@@ -354,8 +354,8 @@ export function FinancialAssistantChat({
                 className={`flex items-start gap-3 mb-4 ${message.role === 'assistant' ? '' : 'justify-end'}`}
               >
                 {message.role === 'assistant' && (
-                  <Avatar className="h-8 w-8 bg-primary text-white">
-                    <Bot className="h-5 w-5" />
+                  <Avatar className="h-6 w-6 mr-2 bg-blue-100">
+                    <Bot className="h-4 w-4 text-blue-600" />
                   </Avatar>
                 )}
                 <div 
