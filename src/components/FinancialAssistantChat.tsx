@@ -1,3 +1,81 @@
+import { useState, useEffect, useRef } from 'react';
+import { genai } from '@/lib/genai';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Loader2, Send, MessageSquare, Bot } from "lucide-react";
+import { Avatar } from "@/components/ui/avatar";
+import { toast } from "@/components/ui/use-toast";
+import { ScrollArea } from '@/components/ui/scroll-area';
+
+// Types imported from Dashboard
+type Transaction = {
+  id: number;
+  year: string;
+  month: string;
+  type: string;
+  category: string;
+  amount: number;
+  description?: string;
+  created_at: string;
+  user_id: string;
+  is_completed: boolean;
+  completed_at?: string;
+  due_day?: number;
+};
+
+type TransactionsData = {
+  receita: Transaction[];
+  despesa: Transaction[];
+  investimento: Transaction[];
+};
+
+type SummaryData = {
+  receita: number;
+  despesa: number;
+  investimento: number;
+  saldo: number;
+};
+
+type CompletionData = {
+  receita: {
+    count: number;
+    completed: number;
+    percentage: number;
+  };
+  despesa: {
+    count: number;
+    completed: number;
+    percentage: number;
+  };
+  investimento: {
+    count: number;
+    completed: number;
+    percentage: number;
+  };
+};
+
+type Message = {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+};
+
+type FinancialAssistantChatProps = {
+  summaryData: SummaryData;
+  transactionsData: TransactionsData;
+  completionData: CompletionData;
+  selectedYear: string;
+  selectedMonth: string;
+  allTransactionsHistory?: Transaction[]; // New prop for complete history
+};
+
+
 export function FinancialAssistantChat({
   summaryData,
   transactionsData,
