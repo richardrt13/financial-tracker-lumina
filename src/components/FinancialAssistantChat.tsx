@@ -57,6 +57,25 @@ export function FinancialAssistantChat({
 
   // Pré-calcular dados financeiros para melhorar a precisão das respostas
   const preCalculatedData = useMemo((): PreCalculatedData => {
+    // Verificar se transactionsData é um array válido
+    if (!Array.isArray(transactionsData)) {
+      console.error("transactionsData não é um array", transactionsData);
+      // Retornar objeto vazio se não for um array válido
+      return {
+        totalExpenses: 0,
+        totalIncome: 0,
+        totalInvestments: 0,
+        expensesByCategory: {},
+        incomesByCategory: {},
+        investmentsByCategory: {},
+        biggestExpense: null,
+        pendingTransactions: 0,
+        completedTransactions: 0,
+        upcomingDueDates: [],
+        balance: 0
+      };
+    }
+    
     // Filtrar transações para o mês e ano selecionados
     const filteredTransactions = transactionsData.filter(t => 
       t.year === selectedYear && t.month === selectedMonth
@@ -283,16 +302,21 @@ export function FinancialAssistantChat({
         return;
       }
       
+      // Verificar se os dados são válidos antes de enviá-los
+      let selectedTransactions = [];
+      if (Array.isArray(transactionsData)) {
+        selectedTransactions = transactionsData.filter(t => 
+          t.year === selectedYear && t.month === selectedMonth
+        ).slice(0, 20); // Limitar para não sobrecarregar o contexto
+      }
+      
       // Preparar dados pré-calculados para o contexto
       const financialContext = {
         year: selectedYear,
         month: selectedMonth,
         summary: summaryData,
         preCalculated: preCalculatedData,
-        // Incluir transações para referência, mas priorizando os dados pré-calculados
-        transactions: transactionsData.filter(t => 
-          t.year === selectedYear && t.month === selectedMonth
-        ).slice(0, 20) // Limitar para não sobrecarregar o contexto
+        transactions: selectedTransactions
       };
 
       // Histórico de mensagens para contexto
