@@ -1,585 +1,412 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { genai } from '@/lib/genai';
-import { SummaryData, TransactionsData, CompletionData } from './Dashboard';
-import { Loader2, Send, Bot } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Loader2, Send, MessageSquare, Bot } from "lucide-react";
+import { Avatar } from "@/components/ui/avatar";
+import { toast } from "@/components/ui/use-toast";
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Avatar } from '@/components/ui/avatar';
-import { supabase } from '@/lib/supabase';
-import { toast } from '@/components/ui/use-toast';
 
-interface FinancialAssistantChatProps {
-  summaryData: SummaryData;
-  completionData: CompletionData;
-}
+// Types imported from Dashboard
+type Transaction = {
+  id: number;
+  year: string;
+  month: string;
+  type: string;
+  category: string;
+  amount: number;
+  description?: string;
+  created_at: string;
+  user_id: string;
+  is_completed: boolean;
+  completed_at?: string;
+  due_day?: number;
+};
+
+type TransactionsData = {
+  receita: Transaction[];
+  despesa: Transaction[];
+  investimento: Transaction[];
+};
+
+type SummaryData = {
+  receita: number;
+  despesa: number;
+  investimento: number;
+  saldo: number;
+};
+
+type CompletionData = {
+  receita: {
+    count: number;
+    completed: number;
+    percentage: number;
+  };
+  despesa: {
+    count: number;
+    completed: number;
+    percentage: number;
+  };
+  investimento: {
+    count: number;
+    completed: number;
+    percentage: number;
+  };
+};
 
 type Message = {
-  content: string;
   role: 'user' | 'assistant';
+  content: string;
   timestamp: Date;
+};
+
+type FinancialAssistantChatProps = {
+  summaryData: SummaryData;
+  transactionsData: TransactionsData;
+  completionData: CompletionData;
+  selectedYear: string;
+  selectedMonth: string;
+  allTransactionsHistory?: Transaction[]; // New prop for complete history
 };
 
 export function FinancialAssistantChat({
   summaryData,
-  completionData
+  transactionsData,
+  completionData,
+  selectedYear,
+  selectedMonth,
+  allTransactionsHistory = []
 }: FinancialAssistantChatProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
-      content: 'Olá! Sou seu assistente financeiro. Como posso ajudar você a entender melhor seus dados financeiros?',
       role: 'assistant',
+      content: 'Olá! Sou seu assistente financeiro. Posso ajudar com análises das suas finanças, tendências de gastos e receitas, ou sugestões para melhorar sua situação financeira. Como posso te ajudar hoje?',
       timestamp: new Date()
     }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [transactionsData, setTransactionsData] = useState<TransactionsData>([]);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [processedData, setProcessedData] = useState<any>(null);
+  const [allHistoricalTransactions, setAllHistoricalTransactions] = useState<Transaction[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Mapeamento de meses em português para números
-  const monthsMap: Record<string, number> = {
-    'janeiro': 0, 'fevereiro': 1, 'março': 2, 'abril': 3, 'maio': 4, 'junho': 5,
-    'julho': 6, 'agosto': 7, 'setembro': 8, 'outubro': 9, 'novembro': 10, 'dezembro': 11
-  };
-
-  // Verificar se o usuário está autenticado
+  // Combine historical transactions from props
   useEffect(() => {
-    const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (session?.user) {
-        setUserId(session.user.id);
-        console.log(`Usuário autenticado: ${session.user.id}`);
-      } else {
-        console.error("Usuário não autenticado");
-        toast({
-          title: "Erro de Autenticação",
-          description: "Você precisa estar logado para acessar esta página.",
-          variant: "destructive"
-        });
-      }
-    };
-    
-    checkUser();
-  }, []);
-
-  // Buscar transações do Supabase filtrando pelo user_id
-  useEffect(() => {
-    const fetchTransactions = async () => {
-      if (!userId) {
-        console.error('ID de usuário não disponível para buscar transações');
-        return;
-      }
-
-      try {
-        const { data, error } = await supabase
-          .from('transactions')
-          .select('*')
-          .eq('user_id', userId)
-          .limit(200);
-
-        if (error) {
-          console.error('Erro ao buscar transações:', error);
-          toast({
-            title: "Erro ao carregar dados",
-            description: "Não foi possível carregar suas transações.",
-            variant: "destructive"
-          });
-        } else {
-          setTransactionsData(data || []);
-          console.log(`Carregadas ${data?.length || 0} transações para o usuário ID: ${userId}`);
-          // Processar os dados imediatamente após carregá-los
-          if (data && data.length > 0) {
-            const processed = processTransactionsForAnalysis(data);
-            setProcessedData(processed);
-          }
-        }
-      } catch (e) {
-        console.error('Exceção ao buscar transações:', e);
-      }
-    };
-
-    if (userId) {
-      fetchTransactions();
+    if (allTransactionsHistory && allTransactionsHistory.length > 0) {
+      setAllHistoricalTransactions(allTransactionsHistory);
     }
-  }, [userId]);
+  }, [allTransactionsHistory]);
 
-  // Rolar para a mensagem mais recente
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
+  // Scroll to latest message
   useEffect(() => {
-    scrollToBottom();
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages]);
 
-  // Processar transações para análise - Versão corrigida para month e year
-  const processTransactionsForAnalysis = (transactions: TransactionsData) => {
-    if (!transactions || transactions.length === 0) {
-      return {
-        categorySummary: {},
-        monthlySpending: {},
-        recentTransactions: []
-      };
-    }
-
-    // Agrupar transações por categoria
-    const categorySummary = transactions.reduce((acc, transaction) => {
-      const category = transaction.category || 'Sem categoria';
-      if (!acc[category]) {
-        acc[category] = {
-          total: 0,
-          count: 0,
-          transactions: []
-        };
-      }
-      acc[category].total += transaction.amount;
-      acc[category].count += 1;
-      acc[category].transactions.push({
-        description: transaction.description,
-        amount: transaction.amount,
-        month: transaction.month,
-        year: transaction.year
-      });
-      return acc;
-    }, {} as Record<string, { total: number; count: number; transactions: any[] }>);
-
-    // Organizar transações por mês/ano
-    const monthlyData: Record<string, { 
-      total: number, 
-      income: number, 
-      expenses: number,
-      transactions: any[],
-      monthName: string,
-      year: string 
-    }> = {};
+  const handleSendMessage = async () => {
+    if (!input.trim() || isLoading || !selectedYear || !selectedMonth) return;
     
-    // Processar transações e organizá-las por mês
-    transactions.forEach(transaction => {
-      // Criar chave para o mês no formato "YYYY-M" (ex: "2025-1" para Janeiro 2025)
-      const monthIndex = monthsMap[transaction.month.toLowerCase()];
-      const monthKey = `${transaction.year}-${monthIndex + 1}`;
-      
-      // Se este mês ainda não estiver no objeto, inicializá-lo
-      if (!monthlyData[monthKey]) {
-        monthlyData[monthKey] = {
-          total: 0,
-          income: 0,
-          expenses: 0,
-          transactions: [],
-          monthName: transaction.month,
-          year: transaction.year
-        };
-      }
-      
-      // Adicionar transação aos dados do mês
-      monthlyData[monthKey].transactions.push({
-        id: transaction.id,
-        description: transaction.description,
-        amount: transaction.amount,
-        category: transaction.category || 'Sem categoria',
-        month: transaction.month,
-        year: transaction.year
-      });
-      
-      // Atualizar totais
-      monthlyData[monthKey].total += transaction.amount;
-      
-      // Separar receitas (valores positivos) e despesas (valores negativos)
-      if (transaction.amount > 0) {
-        monthlyData[monthKey].income += transaction.amount;
-      } else {
-        monthlyData[monthKey].expenses += Math.abs(transaction.amount);
-      }
-    });
-
-    // Calcular saldo de cada mês
-    const balanceByMonth = Object.entries(monthlyData).reduce((acc, [monthKey, data]) => {
-      // Extrair mês e ano da chave
-      const [year, monthNum] = monthKey.split('-');
-      const monthName = data.monthName;
-      
-      acc[`${monthName} ${year}`] = {
-        balance: data.income - data.expenses,
-        income: data.income,
-        expenses: data.expenses,
-        monthName: monthName,
-        year: year
-      };
-      return acc;
-    }, {} as Record<string, { 
-      balance: number, 
-      income: number, 
-      expenses: number, 
-      monthName: string,
-      year: string 
-    }>);
-
-    // Adicionar análise por mês específico para consultas fáceis
-    const analysisByMonth: Record<string, any> = {};
-    Object.keys(monthsMap).forEach(monthName => {
-      // Criar um objeto para cada mês com dados consolidados
-      const monthData = Object.entries(balanceByMonth)
-        .filter(([key]) => key.toLowerCase().includes(monthName.toLowerCase()))
-        .reduce((result, [key, data]) => {
-          result[key] = data;
-          return result;
-        }, {} as Record<string, any>);
-        
-      analysisByMonth[monthName] = monthData;
-    });
-
-    // Dados gerais para análise rápida
-    const quickStats = {
-      totalTransactions: transactions.length,
-      totalIncome: transactions.reduce((sum, tx) => sum + (tx.amount > 0 ? tx.amount : 0), 0),
-      totalExpenses: Math.abs(transactions.reduce((sum, tx) => sum + (tx.amount < 0 ? tx.amount : 0), 0)),
-      topExpenseCategories: Object.entries(categorySummary)
-        .filter(([_, data]) => data.total < 0)
-        .sort((a, b) => a[1].total - b[1].total)
-        .slice(0, 5)
-        .map(([category, data]) => ({ 
-          category, 
-          total: Math.abs(data.total), 
-          count: data.count 
-        })),
-      topIncomeCategories: Object.entries(categorySummary)
-        .filter(([_, data]) => data.total > 0)
-        .sort((a, b) => b[1].total - a[1].total)
-        .slice(0, 5)
-        .map(([category, data]) => ({ 
-          category, 
-          total: data.total, 
-          count: data.count 
-        }))
-    };
-
-    return {
-      categorySummary,
-      monthlySpending: monthlyData,
-      balanceByMonth,
-      analysisByMonth,
-      quickStats,
-      recentTransactions: transactions.slice(0, 10)
-    };
-  };
-
-  // Determinar o tipo de consulta para ajustar a resposta
-  const determineQueryType = (query: string): string => {
-    query = query.toLowerCase().trim();
-    
-    // Checar se é uma saudação simples
-    if (/^(oi|olá|e aí|bom dia|boa tarde|boa noite|hi|hello)$/i.test(query)) {
-      return 'greeting';
-    }
-    
-    // Checar se é uma consulta sobre um mês específico
-    const months = Object.keys(monthsMap);
-    const hasMonth = months.some(month => query.includes(month.toLowerCase()));
-    
-    if (hasMonth) {
-      return 'month_specific';
-    }
-    
-    // Checar se é sobre uma categoria específica
-    const categoryKeywords = ['categoria', 'gastei com', 'gasto em', 'despesa com'];
-    if (categoryKeywords.some(keyword => query.includes(keyword))) {
-      return 'category_specific';
-    }
-    
-    // Checar se é uma solicitação de resumo
-    if (query.includes('resumo') || query.includes('resumir') || query.includes('panorama')) {
-      return 'summary';
-    }
-    
-    // Checar se é sobre dicas ou sugestões
-    if (query.includes('dica') || query.includes('sugestão') || query.includes('conselho') || query.includes('como posso')) {
-      return 'advice';
-    }
-    
-    // Caso padrão
-    return 'general';
-  };
-
-  // Extrair mês mencionado na consulta
-  const extractMonthFromQuery = (query: string): string | null => {
-    query = query.toLowerCase();
-    
-    for (const month of Object.keys(monthsMap)) {
-      if (query.includes(month.toLowerCase())) {
-        return month;
-      }
-    }
-    
-    return null;
-  };
-
-  // Criar prompt adaptativo baseado no tipo de consulta
-  const createAdaptivePrompt = (userQuery: string, queryType: string) => {
-    if (!processedData) {
-      return `Você é um assistente financeiro pessoal. O usuário perguntou: "${userQuery}", mas não temos dados financeiros disponíveis para análise. Por favor, peça ao usuário para cadastrar suas transações financeiras primeiro.`;
-    }
-    
-    // Prompt base para todos os tipos de consulta
-    let basePrompt = `Você é um assistente financeiro pessoal para o usuário ${userId}.`;
-    
-    // Ajuste do prompt de acordo com o tipo de consulta
-    switch (queryType) {
-      case 'greeting':
-        return `${basePrompt} O usuário apenas enviou uma saudação: "${userQuery}". Responda de forma amigável e sucinta, sem fornecer detalhes financeiros específicos. Apenas diga olá e pergunte como você pode ajudar com informações financeiras.`;
-        
-      case 'month_specific':
-        const monthMentioned = extractMonthFromQuery(userQuery);
-        let monthData = {};
-        
-        if (monthMentioned && processedData.analysisByMonth && processedData.analysisByMonth[monthMentioned]) {
-          monthData = processedData.analysisByMonth[monthMentioned];
-        }
-        
-        return `${basePrompt}
-          O usuário está perguntando sobre um mês específico: "${userQuery}".
-          
-          Dados para o mês de ${monthMentioned || "desconhecido"}:
-          ${JSON.stringify(monthData, null, 2)}
-          
-          Por favor, forneça informações específicas sobre esse período.
-          Responda de forma sucinta, com no máximo 2 parágrafos, destacando:
-          - Total de despesas do mês
-          - Total de receitas do mês
-          - Saldo final do mês
-          
-          Se não houver dados para o mês solicitado, informe isso claramente.
-        `;
-        
-      case 'category_specific':
-        return `${basePrompt}
-          O usuário está perguntando sobre uma categoria específica: "${userQuery}".
-          
-          Dados por categoria:
-          ${JSON.stringify(processedData.categorySummary, null, 2)}
-          
-          Por favor, identifique a categoria mencionada na pergunta e forneça informações específicas.
-          Responda em um único parágrafo, destacando o total gasto na categoria e em quais meses ocorreram os principais gastos.
-          
-          Se não houver dados para a categoria solicitada, informe isso claramente.
-        `;
-        
-      case 'summary':
-        return `${basePrompt}
-          O usuário está pedindo um resumo financeiro: "${userQuery}".
-          
-          Dados gerais:
-          ${JSON.stringify(processedData.quickStats, null, 2)}
-          
-          Principais meses:
-          ${JSON.stringify(Object.entries(processedData.balanceByMonth).slice(0, 3), null, 2)}
-          
-          Forneça um resumo conciso em até 2 parágrafos, destacando:
-          - Rendimentos e despesas totais
-          - Principais categorias de gastos
-          - Meses com maiores despesas
-        `;
-        
-      case 'advice':
-        return `${basePrompt}
-          O usuário está pedindo conselhos financeiros: "${userQuery}".
-          
-          Dados gerais:
-          ${JSON.stringify(processedData.quickStats, null, 2)}
-          
-          Dados de metas:
-          ${JSON.stringify(completionData, null, 2)}
-          
-          Forneça no máximo 2 sugestões práticas e personalizadas baseadas nos dados financeiros do usuário.
-          Seja específico e evite conselhos genéricos. Limite sua resposta a 2 parágrafos curtos.
-        `;
-        
-      default:
-        // Para consultas gerais, forneça um prompt mais completo mas específico
-        return `${basePrompt}
-          O usuário perguntou: "${userQuery}".
-          
-          ### DADOS FINANCEIROS RELEVANTES
-          
-          # Resumo rápido
-          ${JSON.stringify(processedData.quickStats, null, 2)}
-          
-          # Alguns meses recentes
-          ${JSON.stringify(Object.entries(processedData.balanceByMonth).slice(0, 3), null, 2)}
-          
-          # Metas financeiras
-          ${JSON.stringify(completionData, null, 2)}
-          
-          ### INSTRUÇÕES PARA RESPOSTA
-          1. Responda APENAS o que foi perguntado, de forma direta.
-          2. Limite sua resposta a 2 parágrafos curtos.
-          3. Use dados específicos e números reais das informações acima.
-          4. Mantenha um tom amigável, mas conciso.
-          5. Se não tiver dados para responder com precisão, diga isso claramente em uma frase.
-        `;
-    }
-  };
-
-  const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
-
-    // Adicionar mensagem do usuário
-    const userMessage: Message = {
-      content: input.trim(),
-      role: 'user',
+    const userMessage = {
+      role: 'user' as const,
+      content: input,
       timestamp: new Date()
     };
-
+    
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
-
+    
     try {
-      // Verificar se temos um usuário autenticado
-      if (!userId) {
-        throw new Error('Usuário não autenticado');
-      }
-
-      // Determinar o tipo de consulta
-      const queryType = determineQueryType(input);
+      // Prepare financial context to send to Gemini API
+      const financialContext = prepareFinancialContext();
       
-      // Criar prompt adaptativo baseado no tipo de consulta
-      const adaptivePrompt = createAdaptivePrompt(input, queryType);
+      // Create chat history for context
+      const chatHistory = messages.map(msg => ({
+        content: msg.content,
+        role: msg.role
+      }));
       
-      // Obter resposta do modelo
+      // Create the prompt and call Gemini API
       const model = genai.getGenerativeModel({ model: "gemini-1.5-flash" });
-      const result = await model.generateContent(adaptivePrompt);
+      
+      const prompt = `
+      Você é um assistente financeiro pessoal. Analise estes dados financeiros do usuário:
+      
+      Contexto financeiro: ${JSON.stringify(financialContext, null, 2)}
+      
+      Conversa anterior:
+      ${chatHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')}
+      
+      Pergunta atual do usuário: ${input}
+      
+      Responda de forma concisa, amigável e direta. Se o usuário pedir insights ou análises, foque nas informações mais relevantes baseadas nos dados apresentados. Se possível, ofereça dicas práticas ou sugestões baseadas no comportamento financeiro observado.
+      `;
+      
+      const result = await model.generateContent(prompt);
       const response = await result.response;
       
-      // Adicionar resposta do assistente
-      const assistantMessage: Message = {
-        content: response.text(),
+      setMessages(prev => [...prev, {
         role: 'assistant',
+        content: response.text(),
         timestamp: new Date()
-      };
-
-      setMessages(prev => [...prev, assistantMessage]);
+      }]);
     } catch (error) {
       console.error('Erro ao processar mensagem:', error);
-      
-      let errorMessage: Message;
-      if (error instanceof Error) {
-        if (error.message === 'Usuário não autenticado') {
-          errorMessage = {
-            content: 'Você precisa estar logado para usar o assistente financeiro. Por favor, faça login e tente novamente.',
-            role: 'assistant',
-            timestamp: new Date()
-          };
-        } else if (!processedData) {
-          errorMessage = {
-            content: 'Não encontrei nenhuma transação financeira para analisar. Por favor, cadastre algumas transações primeiro.',
-            role: 'assistant',
-            timestamp: new Date()
-          };
-        } else {
-          errorMessage = {
-            content: 'Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente.',
-            role: 'assistant',
-            timestamp: new Date()
-          };
-        }
-      } else {
-        errorMessage = {
-          content: 'Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente.',
-          role: 'assistant',
-          timestamp: new Date()
-        };
-      }
-
-      setMessages(prev => [...prev, errorMessage]);
+      toast({
+        title: "Erro",
+        description: "Não foi possível processar sua mensagem. Tente novamente.",
+        variant: "destructive"
+      });
     } finally {
       setIsLoading(false);
+      // Focus on input after response
       setTimeout(() => {
         inputRef.current?.focus();
       }, 100);
     }
   };
 
+  // Prepare structured financial context
+  const prepareFinancialContext = () => {
+    // Merge all transactions from current month
+    const currentTransactions = [
+      ...transactionsData.receita,
+      ...transactionsData.despesa,
+      ...transactionsData.investimento
+    ];
+
+    // Group historical transactions by year and month for trend analysis
+    const transactionsByYearMonth = allHistoricalTransactions.reduce((acc, transaction) => {
+      const key = `${transaction.year}-${transaction.month}`;
+      if (!acc[key]) {
+        acc[key] = {
+          year: transaction.year,
+          month: transaction.month,
+          receita: 0,
+          despesa: 0,
+          investimento: 0,
+          count: 0
+        };
+      }
+      
+      acc[key][transaction.type as 'receita' | 'despesa' | 'investimento'] += transaction.amount;
+      acc[key].count += 1;
+      
+      return acc;
+    }, {} as Record<string, any>);
+
+    // Most common categories
+    const categoryCounts = allHistoricalTransactions.reduce((acc, transaction) => {
+      const category = transaction.category;
+      acc[category] = (acc[category] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const topCategories = Object.entries(categoryCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([category]) => category);
+
+    // Structure final context
+    return {
+      currentFilters: {
+        year: selectedYear,
+        month: selectedMonth
+      },
+      currentPeriodSummary: summaryData,
+      completionStats: completionData,
+      currentTransactions,
+      historicalData: {
+        transactionsByYearMonth: Object.values(transactionsByYearMonth),
+        topCategories,
+        totalTransactions: allHistoricalTransactions.length,
+        monthsWithData: Object.keys(transactionsByYearMonth).length
+      },
+      recentTrends: calculateRecentTrends(allHistoricalTransactions)
+    };
+  };
+
+  // Calculate recent trends based on historical data
+  const calculateRecentTrends = (transactions: Transaction[]) => {
+    // Analyze the last 6 months of data to identify trends
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    
+    // Last 6 months
+    const last6Months: { year: number, month: number }[] = [];
+    for (let i = 0; i < 6; i++) {
+      let month = currentMonth - i;
+      let year = currentYear;
+      
+      if (month < 0) {
+        month += 12;
+        year -= 1;
+      }
+      
+      last6Months.push({ 
+        year, 
+        month: month + 1 // Adjust to 1-12 format instead of 0-11
+      });
+    }
+    
+    // Map months to names to compare with data
+    const monthNames = [
+      "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+      "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+    ];
+    
+    // Group transactions by month for analysis
+    const monthlyData = last6Months.map(({ year, month }) => {
+      const monthName = monthNames[month - 1];
+      const yearStr = year.toString();
+      
+      const monthTransactions = transactions.filter(
+        t => t.year === yearStr && t.month === monthName
+      );
+      
+      return {
+        year,
+        month: monthName,
+        receita: sumByType(monthTransactions, 'receita'),
+        despesa: sumByType(monthTransactions, 'despesa'),
+        investimento: sumByType(monthTransactions, 'investimento')
+      };
+    });
+    
+    // Calculate trends
+    const trends = {
+      receitaCrescente: isTrendIncreasing(monthlyData.map(d => d.receita)),
+      despesaCrescente: isTrendIncreasing(monthlyData.map(d => d.despesa)),
+      investimentoCrescente: isTrendIncreasing(monthlyData.map(d => d.investimento)),
+      economiaMedia: monthlyData.reduce((acc, data) => 
+        acc + (data.receita - data.despesa - data.investimento), 0) / monthlyData.length
+    };
+    
+    return {
+      monthlyData,
+      trends
+    };
+  };
+
+  // Helper functions for trend calculations
+  const sumByType = (transactions: Transaction[], type: string) => {
+    return transactions
+      .filter(t => t.type === type)
+      .reduce((sum, t) => sum + t.amount, 0);
+  };
+  
+  const isTrendIncreasing = (values: number[]) => {
+    if (values.length < 2) return false;
+    
+    // Using simple linear regression to detect trend
+    const xValues = Array.from({ length: values.length }, (_, i) => i);
+    
+    // Calculate slope coefficient
+    const n = values.length;
+    const sumX = xValues.reduce((a, b) => a + b, 0);
+    const sumY = values.reduce((a, b) => a + b, 0);
+    const sumXY = xValues.reduce((sum, x, i) => sum + x * values[i], 0);
+    const sumXX = xValues.reduce((sum, x) => sum + x * x, 0);
+    
+    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+    
+    return slope > 0;
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      handleSendMessage();
     }
   };
 
   return (
-    <div className="mt-8 p-6 bg-white rounded-lg shadow-md flex flex-col h-[500px]">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold flex items-center">
-          <Bot className="mr-2 h-5 w-5 text-blue-600" />
+    <Card className="mt-6">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Bot className="h-6 w-6 text-primary" />
           Assistente Financeiro
-        </h2>
-        {transactionsData && (
-          <div className="text-sm text-gray-500">
-            {transactionsData.length} transações carregadas
-          </div>
+        </CardTitle>
+        {(selectedYear && selectedMonth) ? (
+          <span className="text-sm text-gray-500">
+            Dados: {selectedMonth}/{selectedYear}
+          </span>
+        ) : (
+          <span className="text-sm text-orange-500">
+            Selecione mês e ano para análises precisas
+          </span>
         )}
-      </div>
-
-      <ScrollArea className="flex-grow mb-4 pr-4">
+      </CardHeader>
+      <CardContent>
         <div className="space-y-4">
-          {messages.map((message, index) => (
-            <div 
-              key={index}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
+          <ScrollArea className="h-[300px] pr-4">
+            {messages.map((message, index) => (
               <div 
-                className={`max-w-[80%] p-3 rounded-lg ${
-                  message.role === 'user' 
-                    ? 'bg-blue-600 text-white rounded-tr-none' 
-                    : 'bg-gray-100 text-gray-800 rounded-tl-none border border-gray-200'
-                }`}
+                key={index} 
+                className={`flex items-start gap-3 mb-4 ${message.role === 'assistant' ? '' : 'justify-end'}`}
               >
-                <div className="mb-1 flex items-center">
-                  {message.role === 'assistant' && (
-                    <Avatar className="h-6 w-6 mr-2 bg-blue-100">
-                      <Bot className="h-4 w-4 text-blue-600" />
-                    </Avatar>
-                  )}
-                  <span className="text-xs opacity-75">
-                    {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
+                {message.role === 'assistant' && (
+                  <Avatar className="h-8 w-8 bg-primary text-white">
+                    <Bot className="h-5 w-5" />
+                  </Avatar>
+                )}
+                <div 
+                  className={`rounded-lg p-3 max-w-[80%] ${
+                    message.role === 'assistant' 
+                      ? 'bg-white border shadow' 
+                      : 'bg-primary text-white'
+                  }`}
+                >
+                  <div className="mb-1 flex items-center">
+                    <span className="text-xs opacity-75">
+                      {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <p className="whitespace-pre-wrap">{message.content}</p>
                 </div>
-                <p className="whitespace-pre-wrap">{message.content}</p>
+                {message.role === 'user' && (
+                  <Avatar className="h-8 w-8 bg-gray-500 text-white">
+                    <MessageSquare className="h-5 w-5" />
+                  </Avatar>
+                )}
               </div>
-            </div>
-          ))}
-          <div ref={messagesEndRef} />
+            ))}
+            <div ref={messagesEndRef} />
+          </ScrollArea>
+          
+          <div className="flex items-center gap-2">
+            <Input
+              ref={inputRef}
+              placeholder="Pergunte algo sobre suas finanças..."
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={isLoading || !selectedYear || !selectedMonth}
+            />
+            <Button 
+              onClick={handleSendMessage} 
+              disabled={isLoading || !input.trim() || !selectedYear || !selectedMonth}
+              size="icon"
+            >
+              {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+            </Button>
+          </div>
+          
+          {(!selectedYear || !selectedMonth) && (
+            <p className="text-xs text-orange-500 mt-2">
+              Selecione o ano e mês para começar a conversar com o assistente.
+            </p>
+          )}
         </div>
-      </ScrollArea>
-
-      <div className="mt-auto">
-        <div className="flex items-center space-x-2">
-          <Input
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Pergunte sobre seus dados financeiros..."
-            disabled={isLoading}
-            className="flex-grow"
-          />
-          <Button 
-            onClick={sendMessage}
-            disabled={isLoading || !input.trim()}
-            className="bg-blue-600 hover:bg-blue-700"
-          >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
