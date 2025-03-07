@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { genai } from '@/lib/genai';
 import { SummaryData, TransactionsData, CompletionData } from './Dashboard';
-import { Loader2, Send, Bot } from 'lucide-react';
+import { Loader2, Send, Bot, Calculator } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -19,6 +19,21 @@ type Message = {
   content: string;
   role: 'user' | 'assistant';
   timestamp: Date;
+};
+
+// Tipo para armazenar dados pré-calculados
+type PreCalculatedData = {
+  totalExpenses: number;
+  totalIncome: number;
+  totalInvestments: number;
+  expensesByCategory: Record<string, number>;
+  incomesByCategory: Record<string, number>;
+  investmentsByCategory: Record<string, number>;
+  biggestExpense: { category: string; amount: number } | null;
+  pendingTransactions: number;
+  completedTransactions: number;
+  upcomingDueDates: Array<{ category: string; amount: number; due_day: number }>;
+  balance: number;
 };
 
 export function FinancialAssistantChat({
@@ -40,6 +55,81 @@ export function FinancialAssistantChat({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Pré-calcular dados financeiros para melhorar a precisão das respostas
+  const preCalculatedData = useMemo((): PreCalculatedData => {
+    // Filtrar transações para o mês e ano selecionados
+    const filteredTransactions = transactionsData.filter(t => 
+      t.year === selectedYear && t.month === selectedMonth
+    );
+    
+    // Mapas para armazenar somas por categoria
+    const expensesByCategory: Record<string, number> = {};
+    const incomesByCategory: Record<string, number> = {};
+    const investmentsByCategory: Record<string, number> = {};
+    
+    // Totais
+    let totalExpenses = 0;
+    let totalIncome = 0;
+    let totalInvestments = 0;
+    let biggestExpense = { category: '', amount: 0 };
+    let pendingTransactions = 0;
+    let completedTransactions = 0;
+    
+    // Transações com datas de vencimento próximas
+    const upcomingDueDates: Array<{ category: string; amount: number; due_day: number }> = [];
+    
+    // Processar cada transação
+    filteredTransactions.forEach(transaction => {
+      const { type, category, amount, is_completed, due_day } = transaction;
+      
+      // Contar transações pendentes e completadas
+      if (is_completed === true) {
+        completedTransactions++;
+      } else if (is_completed === false) {
+        pendingTransactions++;
+      }
+      
+      // Processar por tipo
+      if (type === 'despesa') {
+        totalExpenses += amount;
+        expensesByCategory[category] = (expensesByCategory[category] || 0) + amount;
+        
+        // Verificar se é a maior despesa
+        if (amount > biggestExpense.amount) {
+          biggestExpense = { category, amount };
+        }
+        
+        // Adicionar à lista de próximos vencimentos se tiver due_day
+        if (due_day !== null && due_day !== undefined) {
+          upcomingDueDates.push({ category, amount, due_day });
+        }
+      } else if (type === 'receita') {
+        totalIncome += amount;
+        incomesByCategory[category] = (incomesByCategory[category] || 0) + amount;
+      } else if (type === 'investimento') {
+        totalInvestments += amount;
+        investmentsByCategory[category] = (investmentsByCategory[category] || 0) + amount;
+      }
+    });
+    
+    // Ordenar vencimentos por dia
+    upcomingDueDates.sort((a, b) => a.due_day - b.due_day);
+    
+    return {
+      totalExpenses,
+      totalIncome,
+      totalInvestments,
+      expensesByCategory,
+      incomesByCategory,
+      investmentsByCategory,
+      biggestExpense: biggestExpense.amount > 0 ? biggestExpense : null,
+      pendingTransactions,
+      completedTransactions,
+      upcomingDueDates,
+      balance: totalIncome - totalExpenses - totalInvestments
+    };
+  }, [transactionsData, selectedYear, selectedMonth]);
+
   // Rolar para a mensagem mais recente
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -48,6 +138,119 @@ export function FinancialAssistantChat({
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Verificar se a pergunta é sobre cálculos financeiros e responder diretamente
+  const getDirectAnswer = (question: string): string | null => {
+    const questionLower = question.toLowerCase();
+    
+    // Padrões comuns de perguntas sobre valores
+    const expensePattern = /quanto (eu )?(gastei|gasto|foi gasto)/;
+    const incomePattern = /quanto (eu )?(ganhei|ganho|recebi|foi recebido)/;
+    const investmentPattern = /quanto (eu )?(investi|foi investido)/;
+    const balancePattern = /(qual (é|foi) (o|meu) )?(saldo|balanço|balança)/;
+    const categoryPattern = /(em|com|na categoria) ([a-záéíóúâêîôûãõçà ]+)/i;
+    
+    let answer: string | null = null;
+    
+    try {
+      // Responder sobre despesas
+      if (expensePattern.test(questionLower)) {
+        let amount = preCalculatedData.totalExpenses;
+        let category = "";
+        
+        // Verificar se a pergunta é sobre categoria específica
+        const categoryMatch = questionLower.match(categoryPattern);
+        if (categoryMatch && categoryMatch[2]) {
+          category = categoryMatch[2].trim();
+          
+          // Encontrar a categoria mais próxima
+          const categories = Object.keys(preCalculatedData.expensesByCategory);
+          const matchedCategory = categories.find(c => 
+            c.toLowerCase() === category || 
+            c.toLowerCase().includes(category) ||
+            category.includes(c.toLowerCase())
+          );
+          
+          if (matchedCategory) {
+            amount = preCalculatedData.expensesByCategory[matchedCategory];
+            answer = `Em ${selectedMonth}/${selectedYear}, você gastou R$ ${amount.toFixed(2)} em ${matchedCategory}.`;
+          }
+        }
+        
+        if (!answer) {
+          answer = `Em ${selectedMonth}/${selectedYear}, seu gasto total foi de R$ ${amount.toFixed(2)}.`;
+        }
+      }
+      
+      // Responder sobre receitas
+      else if (incomePattern.test(questionLower)) {
+        let amount = preCalculatedData.totalIncome;
+        let category = "";
+        
+        // Verificar se a pergunta é sobre categoria específica
+        const categoryMatch = questionLower.match(categoryPattern);
+        if (categoryMatch && categoryMatch[2]) {
+          category = categoryMatch[2].trim();
+          
+          // Encontrar a categoria mais próxima
+          const categories = Object.keys(preCalculatedData.incomesByCategory);
+          const matchedCategory = categories.find(c => 
+            c.toLowerCase() === category || 
+            c.toLowerCase().includes(category) ||
+            category.includes(c.toLowerCase())
+          );
+          
+          if (matchedCategory) {
+            amount = preCalculatedData.incomesByCategory[matchedCategory];
+            answer = `Em ${selectedMonth}/${selectedYear}, você recebeu R$ ${amount.toFixed(2)} em ${matchedCategory}.`;
+          }
+        }
+        
+        if (!answer) {
+          answer = `Em ${selectedMonth}/${selectedYear}, sua receita total foi de R$ ${amount.toFixed(2)}.`;
+        }
+      }
+      
+      // Responder sobre investimentos
+      else if (investmentPattern.test(questionLower)) {
+        let amount = preCalculatedData.totalInvestments;
+        let category = "";
+        
+        // Verificar se a pergunta é sobre categoria específica
+        const categoryMatch = questionLower.match(categoryPattern);
+        if (categoryMatch && categoryMatch[2]) {
+          category = categoryMatch[2].trim();
+          
+          // Encontrar a categoria mais próxima
+          const categories = Object.keys(preCalculatedData.investmentsByCategory);
+          const matchedCategory = categories.find(c => 
+            c.toLowerCase() === category || 
+            c.toLowerCase().includes(category) ||
+            category.includes(c.toLowerCase())
+          );
+          
+          if (matchedCategory) {
+            amount = preCalculatedData.investmentsByCategory[matchedCategory];
+            answer = `Em ${selectedMonth}/${selectedYear}, você investiu R$ ${amount.toFixed(2)} em ${matchedCategory}.`;
+          }
+        }
+        
+        if (!answer) {
+          answer = `Em ${selectedMonth}/${selectedYear}, seu investimento total foi de R$ ${amount.toFixed(2)}.`;
+        }
+      }
+      
+      // Responder sobre saldo
+      else if (balancePattern.test(questionLower)) {
+        answer = `Em ${selectedMonth}/${selectedYear}, seu saldo foi de R$ ${preCalculatedData.balance.toFixed(2)} (receitas - despesas - investimentos).`;
+      }
+      
+      return answer;
+    } catch (error) {
+      console.error("Erro ao calcular resposta direta:", error);
+      return null;
+    }
+  };
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
@@ -64,13 +267,32 @@ export function FinancialAssistantChat({
     setIsLoading(true);
 
     try {
-      // Preparar contexto com os dados financeiros
+      // Verificar se temos uma resposta direta calculada
+      const directAnswer = getDirectAnswer(input.trim());
+      
+      if (directAnswer) {
+        // Se temos uma resposta direta baseada em cálculos, usá-la imediatamente
+        const assistantMessage: Message = {
+          content: directAnswer,
+          role: 'assistant',
+          timestamp: new Date()
+        };
+        
+        setMessages(prev => [...prev, assistantMessage]);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Preparar dados pré-calculados para o contexto
       const financialContext = {
         year: selectedYear,
         month: selectedMonth,
         summary: summaryData,
-        transactions: transactionsData,
-        completion: completionData
+        preCalculated: preCalculatedData,
+        // Incluir transações para referência, mas priorizando os dados pré-calculados
+        transactions: transactionsData.filter(t => 
+          t.year === selectedYear && t.month === selectedMonth
+        ).slice(0, 20) // Limitar para não sobrecarregar o contexto
       };
 
       // Histórico de mensagens para contexto
@@ -79,20 +301,30 @@ export function FinancialAssistantChat({
         role: msg.role
       }));
 
-      // Criar o prompt
+      // Criar o prompt com instruções específicas sobre cálculos
       const model = genai.getGenerativeModel({ model: "gemini-1.5-flash" });
       
       const prompt = `
-      Você é um assistente financeiro pessoal. Analise estes dados financeiros do usuário:
+      Você é um assistente financeiro pessoal preciso e matemáticamente exato. 
       
-      Contexto financeiro: ${JSON.stringify(financialContext, null, 2)}
+      DADOS FINANCEIROS DO USUÁRIO:
+      ${JSON.stringify(financialContext, null, 2)}
       
-      Conversa anterior:
-      ${chatHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')}
+      INSTRUÇÕES ESPECÍFICAS:
+      1. Ao responder sobre valores, use SEMPRE os valores pré-calculados no objeto 'preCalculated'.
+      2. NÃO faça cálculos por conta própria quando os valores já estiverem calculados.
+      3. Para despesas totais, use preCalculated.totalExpenses: ${preCalculatedData.totalExpenses}
+      4. Para receitas totais, use preCalculated.totalIncome: ${preCalculatedData.totalIncome}
+      5. Para investimentos totais, use preCalculated.totalInvestments: ${preCalculatedData.totalInvestments}
+      6. Para o saldo, use preCalculated.balance: ${preCalculatedData.balance}
+      7. Use os objetos por categoria (expensesByCategory, incomesByCategory, etc.) para valores específicos por categoria.
       
-      Pergunta atual do usuário: ${input}
+      CONVERSA ANTERIOR:
+      ${chatHistory.map(msg => `${msg.role.toUpperCase()}: ${msg.content}`).join('\n')}
       
-      Responda de forma concisa, amigável e direta. Se o usuário pedir insights ou análises, foque nas informações mais relevantes baseadas nos dados apresentados. Se possível, ofereça dicas práticas ou sugestões baseadas no comportamento financeiro observado.
+      PERGUNTA ATUAL DO USUÁRIO: ${input}
+      
+      Responda de forma concisa, amigável e MATEMATICAMENTE PRECISA. Sempre verifique os valores nos dados pré-calculados antes de responder sobre quantias financeiras.
       `;
       
       const result = await model.generateContent(prompt);
@@ -140,9 +372,12 @@ export function FinancialAssistantChat({
           Assistente Financeiro
         </h2>
         {(selectedYear && selectedMonth) ? (
-          <span className="text-sm text-gray-500">
-            Dados: {selectedMonth}/{selectedYear}
-          </span>
+          <div className="flex items-center">
+            <Calculator className="h-4 w-4 mr-1 text-green-600" />
+            <span className="text-sm text-gray-500">
+              Dados: {selectedMonth}/{selectedYear}
+            </span>
+          </div>
         ) : (
           <span className="text-sm text-orange-500">
             Selecione mês e ano para análises precisas
