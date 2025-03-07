@@ -145,6 +145,8 @@ export function FinancialAssistantChat({
       Pergunta atual do usuário: ${input}
       
       Responda de forma concisa, amigável e direta. Se o usuário pedir insights ou análises, foque nas informações mais relevantes baseadas nos dados apresentados. Se possível, ofereça dicas práticas ou sugestões baseadas no comportamento financeiro observado.
+
+      Lembre-se que o saldo é o resultado da receita menos despesas e investimentos e ele não é influciado pela conclusão ou não da transação.
       
       Dados de gastos por categoria:
       ${JSON.stringify(financialContext.categorySpending, null, 2)}
