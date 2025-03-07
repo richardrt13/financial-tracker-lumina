@@ -8,10 +8,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar } from '@/components/ui/avatar';
 
 interface FinancialAssistantChatProps {
-  selectedYear: string;
-  summaryData: Record<string, SummaryData>;
-  transactionsData: Record<string, TransactionsData>;
-  completionData: Record<string, CompletionData>;
+  allFinancialData: {
+    summary: Record<string, Record<string, SummaryData>>;
+    transactions: Record<string, Record<string, TransactionsData>>;
+    completion: Record<string, Record<string, CompletionData>>;
+  };
 }
 
 type Message = {
@@ -21,10 +22,7 @@ type Message = {
 };
 
 export function FinancialAssistantChat({
-  selectedYear,
-  summaryData,
-  transactionsData,
-  completionData
+  allFinancialData
 }: FinancialAssistantChatProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -62,16 +60,6 @@ export function FinancialAssistantChat({
     setIsLoading(true);
 
     try {
-      // Preparar contexto com os dados financeiros completos
-      const financialContext = {
-        year: selectedYear,
-        allMonthsData: {
-          summary: summaryData,
-          transactions: transactionsData,
-          completion: completionData
-        }
-      };
-
       // Histórico de mensagens para contexto
       const chatHistory = messages.map(msg => ({
         content: msg.content,
@@ -82,25 +70,26 @@ export function FinancialAssistantChat({
       const model = genai.getGenerativeModel({ model: "gemini-1.5-flash" });
       
       const prompt = `
-      Você é um assistente financeiro pessoal especializado em análise de dados. Analise cuidadosamente os dados financeiros do usuário:
+      Você é um assistente financeiro pessoal especializado em análise de dados. Você tem acesso a TODO o histórico financeiro do usuário, sem limitações de período:
       
-      Contexto financeiro detalhado: ${JSON.stringify(financialContext, null, 2)}
+      Contexto financeiro completo: ${JSON.stringify(allFinancialData, null, 2)}
       
       Conversa anterior:
       ${chatHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')}
       
       Pergunta atual do usuário: ${input}
       
-      Instruções importantes para cálculos precisos:
-      1. Quando fizer cálculos numéricos, mostre detalhadamente como chegou ao resultado
-      2. Sempre verifique se os valores estão na mesma unidade antes de somá-los ou compará-los
-      3. Para médias e tendências, especifique o período considerado
-      4. Quando calcular percentagens, mostre os valores base utilizados
-      5. Se mencionar economia ou excesso de gastos, utilize sempre valores absolutos como referência
-      6. Considere sazonalidades nos gastos ao fazer comparações entre meses
-      7. Verifique duplamente todos os cálculos matemáticos antes de apresentar conclusões
+      Instruções importantes para cálculos e análises precisos:
+      1. Use TODOS os dados disponíveis em sua análise, não se limite a um período específico a menos que o usuário solicite
+      2. Quando fizer cálculos numéricos, mostre detalhadamente como chegou ao resultado
+      3. Sempre verifique se os valores estão na mesma unidade antes de somá-los ou compará-los
+      4. Para médias e tendências, considere todo o histórico disponível, destacando o período analisado
+      5. Quando calcular percentagens, mostre os valores base utilizados
+      6. Ao analisar tendências, considere dados de múltiplos anos e meses para identificar padrões sazonais
+      7. Ofereça insights sobre mudanças no comportamento financeiro ao longo do tempo
+      8. Verifique duplamente todos os cálculos matemáticos antes de apresentar conclusões
       
-      Responda de forma concisa, amigável e direta. Se o usuário pedir insights ou análises, foque nas informações mais relevantes baseadas nos dados apresentados. Ofereça dicas práticas ou sugestões baseadas no comportamento financeiro observado.
+      Responda de forma concisa, amigável e direta. Se o usuário pedir insights ou análises, foque nas informações mais relevantes baseadas nos dados apresentados. Ofereça dicas práticas ou sugestões baseadas no comportamento financeiro observado ao longo de todo o histórico.
       `;
       
       const result = await model.generateContent(prompt);
@@ -147,15 +136,9 @@ export function FinancialAssistantChat({
           <Bot className="mr-2 h-5 w-5 text-blue-600" />
           Assistente Financeiro
         </h2>
-        {selectedYear ? (
-          <span className="text-sm text-gray-500">
-            Dados: Ano {selectedYear} (todos os meses)
-          </span>
-        ) : (
-          <span className="text-sm text-orange-500">
-            Selecione o ano para análises precisas
-          </span>
-        )}
+        <span className="text-sm text-gray-500">
+          Analisando todo o histórico financeiro
+        </span>
       </div>
 
       <ScrollArea className="flex-grow mb-4 pr-4">
@@ -198,12 +181,12 @@ export function FinancialAssistantChat({
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Pergunte sobre seus dados financeiros..."
-            disabled={isLoading || !selectedYear}
+            disabled={isLoading}
             className="flex-grow"
           />
           <Button 
             onClick={sendMessage}
-            disabled={isLoading || !input.trim() || !selectedYear}
+            disabled={isLoading || !input.trim()}
             className="bg-blue-600 hover:bg-blue-700"
           >
             {isLoading ? (
@@ -213,11 +196,6 @@ export function FinancialAssistantChat({
             )}
           </Button>
         </div>
-        {!selectedYear && (
-          <p className="text-xs text-orange-500 mt-2">
-            Selecione o ano para começar a conversar com o assistente.
-          </p>
-        )}
       </div>
     </div>
   );
