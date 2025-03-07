@@ -138,6 +138,7 @@ export function Dashboard() {
     amount: 0,
     transactions: [],
   });
+  const [allTransactionsHistory, setAllTransactionsHistory] = useState<Transaction[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [editFormData, setEditFormData] = useState({
@@ -176,6 +177,30 @@ export function Dashboard() {
     
     checkUser();
   }, []);
+
+  const fetchAllHistoricalData = useCallback(async () => {
+    if (!userId) return;
+    
+    try {
+      // Não usamos setIsLoading aqui para não interferir na UX do dashboard principal
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('year', { ascending: false })
+        .order('month', { ascending: false });
+        
+      if (error) {
+        console.error('Erro ao buscar histórico completo de transações:', error);
+        return;
+      }
+      
+      setAllTransactionsHistory(data || []);
+    } catch (err) {
+      console.error('Erro ao processar histórico completo:', err);
+    }
+  }, [userId]);
+
 
   // Função para buscar dados
   const fetchData = useCallback(async () => {
@@ -311,6 +336,12 @@ export function Dashboard() {
     }
   }, [fetchData, userId, selectedYear, selectedMonth]);
 
+  useEffect(() => {
+    if (userId) {
+      fetchAllHistoricalData();
+    }
+  }, [fetchAllHistoricalData, userId]);
+
   // Inscrever para eventos de transação
   useEffect(() => {
     const unsubscribe = transactionEvents.subscribe(() => {
@@ -342,6 +373,7 @@ export function Dashboard() {
       subscription.unsubscribe();
     };
   }, [userId, fetchData]);
+
 
   const handleCardClick = (type: string) => {
     if (type !== 'saldo') {
@@ -963,6 +995,7 @@ export function Dashboard() {
         completionData={completionData}
         selectedYear={selectedYear}
         selectedMonth={selectedMonth}
+        allTransactionsHistory={allTransactionsHistory}
       />
     </div>
   );
