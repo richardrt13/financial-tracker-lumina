@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar } from '@/components/ui/avatar';
 import { supabase } from '@/lib/supabase';
-import { toast } from '@/components/ui/use-toast'; // Assumindo que você tem um componente de toast
+import { toast } from '@/components/ui/use-toast';
 
 interface FinancialAssistantChatProps {
   summaryData: SummaryData;
@@ -35,6 +35,7 @@ export function FinancialAssistantChat({
   const [isLoading, setIsLoading] = useState(false);
   const [transactionsData, setTransactionsData] = useState<TransactionsData>([]);
   const [userId, setUserId] = useState<string | null>(null);
+  const [processedData, setProcessedData] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -71,8 +72,9 @@ export function FinancialAssistantChat({
         const { data, error } = await supabase
           .from('transactions')
           .select('*')
-          .eq('user_id', userId) // Filtrar pelo ID do usuário logado
-          .limit(200); // Limitar para evitar sobrecarga
+          .eq('user_id', userId)
+          .order('date', { ascending: false })
+          .limit(200);
 
         if (error) {
           console.error('Erro ao buscar transações:', error);
@@ -84,6 +86,11 @@ export function FinancialAssistantChat({
         } else {
           setTransactionsData(data || []);
           console.log(`Carregadas ${data?.length || 0} transações para o usuário ID: ${userId}`);
+          // Processar os dados imediatamente após carregá-los
+          if (data && data.length > 0) {
+            const processed = processTransactionsForAnalysis(data);
+            setProcessedData(processed);
+          }
         }
       } catch (e) {
         console.error('Exceção ao buscar transações:', e);
@@ -104,7 +111,7 @@ export function FinancialAssistantChat({
     scrollToBottom();
   }, [messages]);
 
-  // Processar transações para análise
+  // Processar transações para análise - Versão melhorada
   const processTransactionsForAnalysis = (transactions: TransactionsData) => {
     if (!transactions || transactions.length === 0) {
       return {
@@ -126,7 +133,6 @@ export function FinancialAssistantChat({
       }
       acc[category].total += transaction.amount;
       acc[category].count += 1;
-      // Armazenar apenas dados essenciais das transações
       acc[category].transactions.push({
         description: transaction.description,
         amount: transaction.amount,
@@ -135,21 +141,48 @@ export function FinancialAssistantChat({
       return acc;
     }, {} as Record<string, { total: number; count: number; transactions: any[] }>);
 
-    // Calcular gastos mensais (últimos 3 meses)
+    // Obter últimos 12 meses para análise mais completa
     const today = new Date();
-    const monthsData: Record<string, { total: number, income: number, expenses: number }> = {};
+    const monthsData: Record<string, { 
+      total: number, 
+      income: number, 
+      expenses: number,
+      transactions: any[] 
+    }> = {};
     
-    for (let i = 0; i < 3; i++) {
+    // Inicializar dados para os últimos 12 meses
+    for (let i = 0; i < 12; i++) {
       const monthDate = new Date(today);
       monthDate.setMonth(today.getMonth() - i);
       const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
-      monthsData[monthKey] = { total: 0, income: 0, expenses: 0 };
+      const monthName = monthDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+      
+      monthsData[monthKey] = { 
+        total: 0, 
+        income: 0, 
+        expenses: 0, 
+        transactions: [],
+        monthName: monthName 
+      };
     }
 
+    // Processar transações e organizá-las por mês
     transactions.forEach(transaction => {
       const txDate = new Date(transaction.date);
       const monthKey = `${txDate.getFullYear()}-${String(txDate.getMonth() + 1).padStart(2, '0')}`;
-      if (monthsData[monthKey] !== undefined) {
+      
+      // Verificar se o mês está no nosso período de análise
+      if (monthsData[monthKey]) {
+        // Adicionar transação aos dados do mês
+        monthsData[monthKey].transactions.push({
+          id: transaction.id,
+          description: transaction.description,
+          amount: transaction.amount,
+          category: transaction.category || 'Sem categoria',
+          date: transaction.date
+        });
+        
+        // Atualizar totais
         monthsData[monthKey].total += transaction.amount;
         
         // Separar receitas (valores positivos) e despesas (valores negativos)
@@ -163,16 +196,180 @@ export function FinancialAssistantChat({
 
     // Calcular saldo de cada mês
     const balanceByMonth = Object.entries(monthsData).reduce((acc, [month, data]) => {
-      acc[month] = data.income - data.expenses;
+      acc[month] = {
+        balance: data.income - data.expenses,
+        income: data.income,
+        expenses: data.expenses,
+        monthName: data.monthName
+      };
       return acc;
-    }, {} as Record<string, number>);
+    }, {} as Record<string, { balance: number, income: number, expenses: number, monthName: string }>);
+
+    // Dados gerais para análise rápida
+    const quickStats = {
+      totalTransactions: transactions.length,
+      totalIncome: transactions.reduce((sum, tx) => sum + (tx.amount > 0 ? tx.amount : 0), 0),
+      totalExpenses: Math.abs(transactions.reduce((sum, tx) => sum + (tx.amount < 0 ? tx.amount : 0), 0)),
+      topExpenseCategories: Object.entries(categorySummary)
+        .filter(([_, data]) => data.total < 0)
+        .sort((a, b) => a[1].total - b[1].total)
+        .slice(0, 5)
+        .map(([category, data]) => ({ 
+          category, 
+          total: Math.abs(data.total), 
+          count: data.count 
+        })),
+      topIncomeCategories: Object.entries(categorySummary)
+        .filter(([_, data]) => data.total > 0)
+        .sort((a, b) => b[1].total - a[1].total)
+        .slice(0, 5)
+        .map(([category, data]) => ({ 
+          category, 
+          total: data.total, 
+          count: data.count 
+        }))
+    };
 
     return {
       categorySummary,
       monthlySpending: monthsData,
       balanceByMonth,
-      recentTransactions: transactions.slice(0, 10) // 10 transações mais recentes
+      quickStats,
+      recentTransactions: transactions.slice(0, 10)
     };
+  };
+
+  // Determinar o tipo de consulta para ajustar a resposta
+  const determineQueryType = (query: string): string => {
+    query = query.toLowerCase().trim();
+    
+    // Checar se é uma saudação simples
+    if (/^(oi|olá|e aí|bom dia|boa tarde|boa noite|hi|hello)$/i.test(query)) {
+      return 'greeting';
+    }
+    
+    // Checar se é uma consulta sobre um mês específico
+    const months = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    const hasMonth = months.some(month => query.includes(month));
+    
+    if (hasMonth) {
+      return 'month_specific';
+    }
+    
+    // Checar se é sobre uma categoria específica
+    const categoryKeywords = ['categoria', 'gastei com', 'gasto em', 'despesa com'];
+    if (categoryKeywords.some(keyword => query.includes(keyword))) {
+      return 'category_specific';
+    }
+    
+    // Checar se é uma solicitação de resumo
+    if (query.includes('resumo') || query.includes('resumir') || query.includes('panorama')) {
+      return 'summary';
+    }
+    
+    // Checar se é sobre dicas ou sugestões
+    if (query.includes('dica') || query.includes('sugestão') || query.includes('conselho') || query.includes('como posso')) {
+      return 'advice';
+    }
+    
+    // Caso padrão
+    return 'general';
+  };
+
+  // Criar prompt adaptativo baseado no tipo de consulta
+  const createAdaptivePrompt = (userQuery: string, queryType: string) => {
+    if (!processedData) {
+      return `Você é um assistente financeiro pessoal. O usuário perguntou: "${userQuery}", mas não temos dados financeiros disponíveis para análise. Por favor, peça ao usuário para cadastrar suas transações financeiras primeiro.`;
+    }
+    
+    // Prompt base para todos os tipos de consulta
+    let basePrompt = `Você é um assistente financeiro pessoal para o usuário ${userId}.`;
+    
+    // Ajuste do prompt de acordo com o tipo de consulta
+    switch (queryType) {
+      case 'greeting':
+        return `${basePrompt} O usuário apenas enviou uma saudação: "${userQuery}". Responda de forma amigável e sucinta, sem fornecer detalhes financeiros específicos. Apenas diga olá e pergunte como você pode ajudar com informações financeiras.`;
+        
+      case 'month_specific':
+        return `${basePrompt}
+          O usuário está perguntando sobre um mês específico: "${userQuery}".
+          
+          Dados financeiros por mês:
+          ${JSON.stringify(processedData.balanceByMonth, null, 2)}
+          
+          Por favor, identifique o mês mencionado na pergunta e forneça informações específicas sobre esse período.
+          Responda de forma sucinta, com no máximo 2 parágrafos, destacando:
+          - Total de despesas do mês
+          - Total de receitas do mês
+          - Saldo final do mês
+          - Principais categorias de despesa, se relevante para a pergunta
+        `;
+        
+      case 'category_specific':
+        return `${basePrompt}
+          O usuário está perguntando sobre uma categoria específica: "${userQuery}".
+          
+          Dados por categoria:
+          ${JSON.stringify(processedData.categorySummary, null, 2)}
+          
+          Por favor, identifique a categoria mencionada na pergunta e forneça informações específicas.
+          Responda em um único parágrafo, destacando o total gasto na categoria e quando ocorreram os principais gastos.
+        `;
+        
+      case 'summary':
+        return `${basePrompt}
+          O usuário está pedindo um resumo financeiro: "${userQuery}".
+          
+          Dados gerais:
+          ${JSON.stringify(processedData.quickStats, null, 2)}
+          
+          Principais gastos por mês:
+          ${JSON.stringify(Object.entries(processedData.balanceByMonth).slice(0, 3), null, 2)}
+          
+          Forneça um resumo conciso em até 3 parágrafos, destacando:
+          - Rendimentos e despesas recentes
+          - Principais categorias de gastos
+          - Tendências observadas nos últimos meses
+        `;
+        
+      case 'advice':
+        return `${basePrompt}
+          O usuário está pedindo conselhos financeiros: "${userQuery}".
+          
+          Dados gerais:
+          ${JSON.stringify(processedData.quickStats, null, 2)}
+          
+          Dados de metas:
+          ${JSON.stringify(completionData, null, 2)}
+          
+          Forneça no máximo 3 sugestões práticas e personalizadas baseadas nos dados financeiros do usuário.
+          Seja específico e evite conselhos genéricos. Limite sua resposta a 3 parágrafos curtos.
+        `;
+        
+      default:
+        // Para consultas gerais, forneça um prompt mais completo mas específico
+        return `${basePrompt}
+          O usuário perguntou: "${userQuery}".
+          
+          ### DADOS FINANCEIROS RELEVANTES
+          
+          # Resumo rápido
+          ${JSON.stringify(processedData.quickStats, null, 2)}
+          
+          # Dados por mês
+          ${JSON.stringify(Object.entries(processedData.balanceByMonth).slice(0, 3), null, 2)}
+          
+          # Metas financeiras
+          ${JSON.stringify(completionData, null, 2)}
+          
+          ### INSTRUÇÕES PARA RESPOSTA
+          1. Responda APENAS o que foi perguntado, de forma direta.
+          2. Limite sua resposta a 2-3 parágrafos curtos.
+          3. Use dados específicos e números reais das informações acima.
+          4. Mantenha um tom amigável, mas conciso.
+          5. Se não tiver dados para responder com precisão, diga isso claramente em uma frase.
+        `;
+    }
   };
 
   const sendMessage = async () => {
@@ -195,71 +392,15 @@ export function FinancialAssistantChat({
         throw new Error('Usuário não autenticado');
       }
 
-      // Verificar se temos transações para analisar
-      if (!transactionsData || transactionsData.length === 0) {
-        throw new Error('Não há transações disponíveis para análise');
-      }
-
-      // Processar dados de transações para análise mais eficiente
-      const processedTransactions = processTransactionsForAnalysis(transactionsData);
+      // Determinar o tipo de consulta
+      const queryType = determineQueryType(input);
       
-      // Preparar contexto com os dados financeiros processados
-      const financialContext = {
-        summary: summaryData,
-        transactionsAnalysis: processedTransactions,
-        completion: completionData,
-        totalTransactions: transactionsData.length,
-        userId: userId
-      };
-
-      // Histórico de mensagens para contexto (limitado às últimas 5 para manter relevância)
-      const recentMessages = messages.slice(-5);
-      const chatHistory = recentMessages.map(msg => ({
-        content: msg.content,
-        role: msg.role
-      }));
-
-      // Criar o prompt estruturado
+      // Criar prompt adaptativo baseado no tipo de consulta
+      const adaptivePrompt = createAdaptivePrompt(input, queryType);
+      
+      // Obter resposta do modelo
       const model = genai.getGenerativeModel({ model: "gemini-1.5-flash" });
-      
-      const prompt = `
-      Você é um assistente financeiro pessoal especializado em análise de dados financeiros. Sua tarefa é fornecer insights precisos e úteis com base nos dados financeiros do usuário ${userId}.
-
-      ### DADOS FINANCEIROS DO USUÁRIO
-      
-      # Resumo Financeiro
-      ${JSON.stringify(summaryData, null, 2)}
-      
-      # Análise de Transações
-      - Total de transações: ${financialContext.totalTransactions}
-      - Transações por categoria: ${JSON.stringify(processedTransactions.categorySummary, null, 2)}
-      - Gastos e receitas mensais: ${JSON.stringify(processedTransactions.monthlySpending, null, 2)}
-      - Saldo mensal: ${JSON.stringify(processedTransactions.balanceByMonth, null, 2)}
-      
-      # Transações Recentes (10 últimas)
-      ${JSON.stringify(processedTransactions.recentTransactions, null, 2)}
-      
-      # Metas Financeiras
-      ${JSON.stringify(completionData, null, 2)}
-      
-      ### CONVERSA ANTERIOR
-      ${chatHistory.map(msg => `${msg.role.toUpperCase()}: ${msg.content}`).join('\n\n')}
-      
-      ### PERGUNTA ATUAL DO USUÁRIO
-      ${input}
-      
-      ### INSTRUÇÕES PARA RESPOSTA
-      1. Use APENAS os dados financeiros fornecidos acima para sua análise.
-      2. Responda de forma concisa e direta, com no máximo 3-4 parágrafos.
-      3. Se a pergunta for sobre uma categoria ou período específico, forneça dados precisos dessas categorias/períodos.
-      4. Inclua números e percentuais específicos quando relevante.
-      5. Se não tiver dados suficientes para responder com precisão, admita isso claramente.
-      6. Mantenha um tom amigável e profissional.
-      
-      Sua resposta:
-      `;
-      
-      const result = await model.generateContent(prompt);
+      const result = await model.generateContent(adaptivePrompt);
       const response = await result.response;
       
       // Adicionar resposta do assistente
@@ -281,7 +422,7 @@ export function FinancialAssistantChat({
             role: 'assistant',
             timestamp: new Date()
           };
-        } else if (error.message === 'Não há transações disponíveis para análise') {
+        } else if (!processedData) {
           errorMessage = {
             content: 'Não encontrei nenhuma transação financeira para analisar. Por favor, cadastre algumas transações primeiro.',
             role: 'assistant',
@@ -305,7 +446,6 @@ export function FinancialAssistantChat({
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
-      // Foca no input após resposta
       setTimeout(() => {
         inputRef.current?.focus();
       }, 100);
