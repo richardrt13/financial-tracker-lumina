@@ -36,12 +36,14 @@ export function FinancialAssistantChat({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Buscar transações do Supabase
+  // Buscar transações do Supabase e organizá-las
   useEffect(() => {
     const fetchTransactions = async () => {
       const { data, error } = await supabase
         .from('transactions')
-        .select('*');
+        .select('*')
+        .order('date', { ascending: false })
+        .limit(100); // Limitar para transações mais recentes
 
       if (error) {
         console.error('Erro ao buscar transações:', error);
@@ -62,6 +64,55 @@ export function FinancialAssistantChat({
     scrollToBottom();
   }, [messages]);
 
+  // Processar transações para análise
+  const processTransactionsForAnalysis = (transactions: TransactionsData) => {
+    // Agrupar transações por categoria
+    const categorySummary = transactions.reduce((acc, transaction) => {
+      const category = transaction.category || 'Sem categoria';
+      if (!acc[category]) {
+        acc[category] = {
+          total: 0,
+          count: 0,
+          transactions: []
+        };
+      }
+      acc[category].total += transaction.amount;
+      acc[category].count += 1;
+      // Armazenar apenas dados essenciais das transações
+      acc[category].transactions.push({
+        description: transaction.description,
+        amount: transaction.amount,
+        date: transaction.date
+      });
+      return acc;
+    }, {} as Record<string, { total: number; count: number; transactions: any[] }>);
+
+    // Calcular gastos mensais (últimos 3 meses)
+    const today = new Date();
+    const monthsData: Record<string, number> = {};
+    
+    for (let i = 0; i < 3; i++) {
+      const monthDate = new Date(today);
+      monthDate.setMonth(today.getMonth() - i);
+      const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
+      monthsData[monthKey] = 0;
+    }
+
+    transactions.forEach(transaction => {
+      const txDate = new Date(transaction.date);
+      const monthKey = `${txDate.getFullYear()}-${String(txDate.getMonth() + 1).padStart(2, '0')}`;
+      if (monthsData[monthKey] !== undefined) {
+        monthsData[monthKey] += transaction.amount;
+      }
+    });
+
+    return {
+      categorySummary,
+      monthlySpending: monthsData,
+      recentTransactions: transactions.slice(0, 10) // 10 transações mais recentes
+    };
+  };
+
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
 
@@ -77,33 +128,61 @@ export function FinancialAssistantChat({
     setIsLoading(true);
 
     try {
-      // Preparar contexto com os dados financeiros
+      // Processar dados de transações para análise mais eficiente
+      const processedTransactions = processTransactionsForAnalysis(transactionsData);
+      
+      // Preparar contexto com os dados financeiros processados
       const financialContext = {
         summary: summaryData,
-        transactions: transactionsData,
-        completion: completionData
+        transactionsAnalysis: processedTransactions,
+        completion: completionData,
+        totalTransactions: transactionsData.length
       };
 
-      // Histórico de mensagens para contexto
-      const chatHistory = messages.map(msg => ({
+      // Histórico de mensagens para contexto (limitado às últimas 5 para manter relevância)
+      const recentMessages = messages.slice(-5);
+      const chatHistory = recentMessages.map(msg => ({
         content: msg.content,
         role: msg.role
       }));
 
-      // Criar o prompt
+      // Criar o prompt estruturado
       const model = genai.getGenerativeModel({ model: "gemini-1.5-flash" });
       
       const prompt = `
-      Você é um assistente financeiro pessoal. Analise estes dados financeiros do usuário:
+      Você é um assistente financeiro pessoal especializado em análise de dados financeiros. Sua tarefa é fornecer insights precisos e úteis com base nos dados financeiros do usuário.
+
+      ### DADOS FINANCEIROS DO USUÁRIO
       
-      Contexto financeiro: ${JSON.stringify(financialContext, null, 2)}
+      # Resumo Financeiro
+      ${JSON.stringify(summaryData, null, 2)}
       
-      Conversa anterior:
-      ${chatHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')}
+      # Análise de Transações
+      - Total de transações: ${financialContext.totalTransactions}
+      - Gastos por categoria: ${JSON.stringify(processedTransactions.categorySummary, null, 2)}
+      - Gastos mensais: ${JSON.stringify(processedTransactions.monthlySpending, null, 2)}
       
-      Pergunta atual do usuário: ${input}
+      # Transações Recentes
+      ${JSON.stringify(processedTransactions.recentTransactions, null, 2)}
       
-      Responda de forma concisa, amigável e direta. Se o usuário pedir insights ou análises, foque nas informações mais relevantes baseadas nos dados apresentados. Se possível, ofereça dicas práticas ou sugestões baseadas no comportamento financeiro observado.
+      # Metas Financeiras
+      ${JSON.stringify(completionData, null, 2)}
+      
+      ### CONVERSA ANTERIOR
+      ${chatHistory.map(msg => `${msg.role.toUpperCase()}: ${msg.content}`).join('\n\n')}
+      
+      ### PERGUNTA ATUAL DO USUÁRIO
+      ${input}
+      
+      ### INSTRUÇÕES PARA RESPOSTA
+      1. Use APENAS os dados financeiros fornecidos acima para sua análise.
+      2. Responda de forma concisa e direta, com no máximo 3-4 parágrafos.
+      3. Se a pergunta for sobre uma categoria ou período específico, forneça dados precisos dessas categorias/períodos.
+      4. Inclua números e percentuais específicos quando relevante.
+      5. Se não tiver dados suficientes para responder com precisão, admita isso claramente.
+      6. Mantenha um tom amigável e profissional.
+      
+      Sua resposta:
       `;
       
       const result = await model.generateContent(prompt);
