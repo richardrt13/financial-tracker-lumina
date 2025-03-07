@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar } from '@/components/ui/avatar';
 import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/lib/auth'; // Pressuponho que você tenha um hook de autenticação
+import { toast } from '@/components/ui/use-toast'; // Assumindo que você tem um componente de toast
 
 interface FinancialAssistantChatProps {
   summaryData: SummaryData;
@@ -34,37 +34,67 @@ export function FinancialAssistantChat({
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [transactionsData, setTransactionsData] = useState<TransactionsData>([]);
+  const [userId, setUserId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { user } = useAuth(); // Obter o usuário atual
+
+  // Verificar se o usuário está autenticado
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        setUserId(session.user.id);
+        console.log(`Usuário autenticado: ${session.user.id}`);
+      } else {
+        console.error("Usuário não autenticado");
+        toast({
+          title: "Erro de Autenticação",
+          description: "Você precisa estar logado para acessar esta página.",
+          variant: "destructive"
+        });
+      }
+    };
+    
+    checkUser();
+  }, []);
 
   // Buscar transações do Supabase filtrando pelo user_id
   useEffect(() => {
     const fetchTransactions = async () => {
-      if (!user || !user.id) {
-        console.error('Usuário não autenticado ou sem ID');
+      if (!userId) {
+        console.error('ID de usuário não disponível para buscar transações');
         return;
       }
 
-      const { data, error } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('user_id', user.id) // Filtrar pelo ID do usuário logado
-        .order('date', { ascending: false })
-        .limit(200); // Limitar para evitar sobrecarga
+      try {
+        const { data, error } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('user_id', userId) // Filtrar pelo ID do usuário logado
+          .order('date', { ascending: false })
+          .limit(200); // Limitar para evitar sobrecarga
 
-      if (error) {
-        console.error('Erro ao buscar transações:', error);
-      } else {
-        setTransactionsData(data);
-        console.log(`Carregadas ${data.length} transações para o usuário ID: ${user.id}`);
+        if (error) {
+          console.error('Erro ao buscar transações:', error);
+          toast({
+            title: "Erro ao carregar dados",
+            description: "Não foi possível carregar suas transações.",
+            variant: "destructive"
+          });
+        } else {
+          setTransactionsData(data || []);
+          console.log(`Carregadas ${data?.length || 0} transações para o usuário ID: ${userId}`);
+        }
+      } catch (e) {
+        console.error('Exceção ao buscar transações:', e);
       }
     };
 
-    if (user) {
+    if (userId) {
       fetchTransactions();
     }
-  }, [user]);
+  }, [userId]);
 
   // Rolar para a mensagem mais recente
   const scrollToBottom = () => {
@@ -161,6 +191,11 @@ export function FinancialAssistantChat({
     setIsLoading(true);
 
     try {
+      // Verificar se temos um usuário autenticado
+      if (!userId) {
+        throw new Error('Usuário não autenticado');
+      }
+
       // Verificar se temos transações para analisar
       if (!transactionsData || transactionsData.length === 0) {
         throw new Error('Não há transações disponíveis para análise');
@@ -175,7 +210,7 @@ export function FinancialAssistantChat({
         transactionsAnalysis: processedTransactions,
         completion: completionData,
         totalTransactions: transactionsData.length,
-        userId: user?.id
+        userId: userId
       };
 
       // Histórico de mensagens para contexto (limitado às últimas 5 para manter relevância)
@@ -189,7 +224,7 @@ export function FinancialAssistantChat({
       const model = genai.getGenerativeModel({ model: "gemini-1.5-flash" });
       
       const prompt = `
-      Você é um assistente financeiro pessoal especializado em análise de dados financeiros. Sua tarefa é fornecer insights precisos e úteis com base nos dados financeiros do usuário ${user?.id}.
+      Você é um assistente financeiro pessoal especializado em análise de dados financeiros. Sua tarefa é fornecer insights precisos e úteis com base nos dados financeiros do usuário ${userId}.
 
       ### DADOS FINANCEIROS DO USUÁRIO
       
@@ -221,7 +256,6 @@ export function FinancialAssistantChat({
       4. Inclua números e percentuais específicos quando relevante.
       5. Se não tiver dados suficientes para responder com precisão, admita isso claramente.
       6. Mantenha um tom amigável e profissional.
-      7. IMPORTANTE: Certifique-se de que está analisando apenas as transações do usuário ${user?.id}.
       
       Sua resposta:
       `;
@@ -241,12 +275,26 @@ export function FinancialAssistantChat({
       console.error('Erro ao processar mensagem:', error);
       
       let errorMessage: Message;
-      if (error instanceof Error && error.message === 'Não há transações disponíveis para análise') {
-        errorMessage = {
-          content: 'Não consigo encontrar suas transações financeiras. Verifique se você está logado corretamente ou se já cadastrou alguma transação.',
-          role: 'assistant',
-          timestamp: new Date()
-        };
+      if (error instanceof Error) {
+        if (error.message === 'Usuário não autenticado') {
+          errorMessage = {
+            content: 'Você precisa estar logado para usar o assistente financeiro. Por favor, faça login e tente novamente.',
+            role: 'assistant',
+            timestamp: new Date()
+          };
+        } else if (error.message === 'Não há transações disponíveis para análise') {
+          errorMessage = {
+            content: 'Não encontrei nenhuma transação financeira para analisar. Por favor, cadastre algumas transações primeiro.',
+            role: 'assistant',
+            timestamp: new Date()
+          };
+        } else {
+          errorMessage = {
+            content: 'Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente.',
+            role: 'assistant',
+            timestamp: new Date()
+          };
+        }
       } else {
         errorMessage = {
           content: 'Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente.',
