@@ -39,6 +39,12 @@ export function FinancialAssistantChat({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Mapeamento de meses em português para números
+  const monthsMap: Record<string, number> = {
+    'janeiro': 0, 'fevereiro': 1, 'março': 2, 'abril': 3, 'maio': 4, 'junho': 5,
+    'julho': 6, 'agosto': 7, 'setembro': 8, 'outubro': 9, 'novembro': 10, 'dezembro': 11
+  };
+
   // Verificar se o usuário está autenticado
   useEffect(() => {
     const checkUser = async () => {
@@ -73,7 +79,6 @@ export function FinancialAssistantChat({
           .from('transactions')
           .select('*')
           .eq('user_id', userId)
-          .order('date', { ascending: false })
           .limit(200);
 
         if (error) {
@@ -111,7 +116,7 @@ export function FinancialAssistantChat({
     scrollToBottom();
   }, [messages]);
 
-  // Processar transações para análise - Versão melhorada
+  // Processar transações para análise - Versão corrigida para month e year
   const processTransactionsForAnalysis = (transactions: TransactionsData) => {
     if (!transactions || transactions.length === 0) {
       return {
@@ -136,74 +141,96 @@ export function FinancialAssistantChat({
       acc[category].transactions.push({
         description: transaction.description,
         amount: transaction.amount,
-        date: transaction.date
+        month: transaction.month,
+        year: transaction.year
       });
       return acc;
     }, {} as Record<string, { total: number; count: number; transactions: any[] }>);
 
-    // Obter últimos 12 meses para análise mais completa
-    const today = new Date();
-    const monthsData: Record<string, { 
+    // Organizar transações por mês/ano
+    const monthlyData: Record<string, { 
       total: number, 
       income: number, 
       expenses: number,
-      transactions: any[] 
+      transactions: any[],
+      monthName: string,
+      year: string 
     }> = {};
     
-    // Inicializar dados para os últimos 12 meses
-    for (let i = 0; i < 12; i++) {
-      const monthDate = new Date(today);
-      monthDate.setMonth(today.getMonth() - i);
-      const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
-      const monthName = monthDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
-      
-      monthsData[monthKey] = { 
-        total: 0, 
-        income: 0, 
-        expenses: 0, 
-        transactions: [],
-        monthName: monthName 
-      };
-    }
-
     // Processar transações e organizá-las por mês
     transactions.forEach(transaction => {
-      const txDate = new Date(transaction.date);
-      const monthKey = `${txDate.getFullYear()}-${String(txDate.getMonth() + 1).padStart(2, '0')}`;
+      // Criar chave para o mês no formato "YYYY-M" (ex: "2025-1" para Janeiro 2025)
+      const monthIndex = monthsMap[transaction.month.toLowerCase()];
+      const monthKey = `${transaction.year}-${monthIndex + 1}`;
       
-      // Verificar se o mês está no nosso período de análise
-      if (monthsData[monthKey]) {
-        // Adicionar transação aos dados do mês
-        monthsData[monthKey].transactions.push({
-          id: transaction.id,
-          description: transaction.description,
-          amount: transaction.amount,
-          category: transaction.category || 'Sem categoria',
-          date: transaction.date
-        });
-        
-        // Atualizar totais
-        monthsData[monthKey].total += transaction.amount;
-        
-        // Separar receitas (valores positivos) e despesas (valores negativos)
-        if (transaction.amount > 0) {
-          monthsData[monthKey].income += transaction.amount;
-        } else {
-          monthsData[monthKey].expenses += Math.abs(transaction.amount);
-        }
+      // Se este mês ainda não estiver no objeto, inicializá-lo
+      if (!monthlyData[monthKey]) {
+        monthlyData[monthKey] = {
+          total: 0,
+          income: 0,
+          expenses: 0,
+          transactions: [],
+          monthName: transaction.month,
+          year: transaction.year
+        };
+      }
+      
+      // Adicionar transação aos dados do mês
+      monthlyData[monthKey].transactions.push({
+        id: transaction.id,
+        description: transaction.description,
+        amount: transaction.amount,
+        category: transaction.category || 'Sem categoria',
+        month: transaction.month,
+        year: transaction.year
+      });
+      
+      // Atualizar totais
+      monthlyData[monthKey].total += transaction.amount;
+      
+      // Separar receitas (valores positivos) e despesas (valores negativos)
+      if (transaction.amount > 0) {
+        monthlyData[monthKey].income += transaction.amount;
+      } else {
+        monthlyData[monthKey].expenses += Math.abs(transaction.amount);
       }
     });
 
     // Calcular saldo de cada mês
-    const balanceByMonth = Object.entries(monthsData).reduce((acc, [month, data]) => {
-      acc[month] = {
+    const balanceByMonth = Object.entries(monthlyData).reduce((acc, [monthKey, data]) => {
+      // Extrair mês e ano da chave
+      const [year, monthNum] = monthKey.split('-');
+      const monthName = data.monthName;
+      
+      acc[`${monthName} ${year}`] = {
         balance: data.income - data.expenses,
         income: data.income,
         expenses: data.expenses,
-        monthName: data.monthName
+        monthName: monthName,
+        year: year
       };
       return acc;
-    }, {} as Record<string, { balance: number, income: number, expenses: number, monthName: string }>);
+    }, {} as Record<string, { 
+      balance: number, 
+      income: number, 
+      expenses: number, 
+      monthName: string,
+      year: string 
+    }>);
+
+    // Adicionar análise por mês específico para consultas fáceis
+    const analysisByMonth: Record<string, any> = {};
+    Object.keys(monthsMap).forEach(monthName => {
+      // Criar um objeto para cada mês com dados consolidados
+      const monthData = Object.entries(balanceByMonth)
+        .filter(([key]) => key.toLowerCase().includes(monthName.toLowerCase()))
+        .reduce((result, [key, data]) => {
+          result[key] = data;
+          return result;
+        }, {} as Record<string, any>);
+        
+      analysisByMonth[monthName] = monthData;
+    });
 
     // Dados gerais para análise rápida
     const quickStats = {
@@ -232,8 +259,9 @@ export function FinancialAssistantChat({
 
     return {
       categorySummary,
-      monthlySpending: monthsData,
+      monthlySpending: monthlyData,
       balanceByMonth,
+      analysisByMonth,
       quickStats,
       recentTransactions: transactions.slice(0, 10)
     };
@@ -249,8 +277,8 @@ export function FinancialAssistantChat({
     }
     
     // Checar se é uma consulta sobre um mês específico
-    const months = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
-    const hasMonth = months.some(month => query.includes(month));
+    const months = Object.keys(monthsMap);
+    const hasMonth = months.some(month => query.includes(month.toLowerCase()));
     
     if (hasMonth) {
       return 'month_specific';
@@ -276,6 +304,19 @@ export function FinancialAssistantChat({
     return 'general';
   };
 
+  // Extrair mês mencionado na consulta
+  const extractMonthFromQuery = (query: string): string | null => {
+    query = query.toLowerCase();
+    
+    for (const month of Object.keys(monthsMap)) {
+      if (query.includes(month.toLowerCase())) {
+        return month;
+      }
+    }
+    
+    return null;
+  };
+
   // Criar prompt adaptativo baseado no tipo de consulta
   const createAdaptivePrompt = (userQuery: string, queryType: string) => {
     if (!processedData) {
@@ -291,18 +332,26 @@ export function FinancialAssistantChat({
         return `${basePrompt} O usuário apenas enviou uma saudação: "${userQuery}". Responda de forma amigável e sucinta, sem fornecer detalhes financeiros específicos. Apenas diga olá e pergunte como você pode ajudar com informações financeiras.`;
         
       case 'month_specific':
+        const monthMentioned = extractMonthFromQuery(userQuery);
+        let monthData = {};
+        
+        if (monthMentioned && processedData.analysisByMonth && processedData.analysisByMonth[monthMentioned]) {
+          monthData = processedData.analysisByMonth[monthMentioned];
+        }
+        
         return `${basePrompt}
           O usuário está perguntando sobre um mês específico: "${userQuery}".
           
-          Dados financeiros por mês:
-          ${JSON.stringify(processedData.balanceByMonth, null, 2)}
+          Dados para o mês de ${monthMentioned || "desconhecido"}:
+          ${JSON.stringify(monthData, null, 2)}
           
-          Por favor, identifique o mês mencionado na pergunta e forneça informações específicas sobre esse período.
+          Por favor, forneça informações específicas sobre esse período.
           Responda de forma sucinta, com no máximo 2 parágrafos, destacando:
           - Total de despesas do mês
           - Total de receitas do mês
           - Saldo final do mês
-          - Principais categorias de despesa, se relevante para a pergunta
+          
+          Se não houver dados para o mês solicitado, informe isso claramente.
         `;
         
       case 'category_specific':
@@ -313,7 +362,9 @@ export function FinancialAssistantChat({
           ${JSON.stringify(processedData.categorySummary, null, 2)}
           
           Por favor, identifique a categoria mencionada na pergunta e forneça informações específicas.
-          Responda em um único parágrafo, destacando o total gasto na categoria e quando ocorreram os principais gastos.
+          Responda em um único parágrafo, destacando o total gasto na categoria e em quais meses ocorreram os principais gastos.
+          
+          Se não houver dados para a categoria solicitada, informe isso claramente.
         `;
         
       case 'summary':
@@ -323,13 +374,13 @@ export function FinancialAssistantChat({
           Dados gerais:
           ${JSON.stringify(processedData.quickStats, null, 2)}
           
-          Principais gastos por mês:
+          Principais meses:
           ${JSON.stringify(Object.entries(processedData.balanceByMonth).slice(0, 3), null, 2)}
           
-          Forneça um resumo conciso em até 3 parágrafos, destacando:
-          - Rendimentos e despesas recentes
+          Forneça um resumo conciso em até 2 parágrafos, destacando:
+          - Rendimentos e despesas totais
           - Principais categorias de gastos
-          - Tendências observadas nos últimos meses
+          - Meses com maiores despesas
         `;
         
       case 'advice':
@@ -342,8 +393,8 @@ export function FinancialAssistantChat({
           Dados de metas:
           ${JSON.stringify(completionData, null, 2)}
           
-          Forneça no máximo 3 sugestões práticas e personalizadas baseadas nos dados financeiros do usuário.
-          Seja específico e evite conselhos genéricos. Limite sua resposta a 3 parágrafos curtos.
+          Forneça no máximo 2 sugestões práticas e personalizadas baseadas nos dados financeiros do usuário.
+          Seja específico e evite conselhos genéricos. Limite sua resposta a 2 parágrafos curtos.
         `;
         
       default:
@@ -356,7 +407,7 @@ export function FinancialAssistantChat({
           # Resumo rápido
           ${JSON.stringify(processedData.quickStats, null, 2)}
           
-          # Dados por mês
+          # Alguns meses recentes
           ${JSON.stringify(Object.entries(processedData.balanceByMonth).slice(0, 3), null, 2)}
           
           # Metas financeiras
@@ -364,7 +415,7 @@ export function FinancialAssistantChat({
           
           ### INSTRUÇÕES PARA RESPOSTA
           1. Responda APENAS o que foi perguntado, de forma direta.
-          2. Limite sua resposta a 2-3 parágrafos curtos.
+          2. Limite sua resposta a 2 parágrafos curtos.
           3. Use dados específicos e números reais das informações acima.
           4. Mantenha um tom amigável, mas conciso.
           5. Se não tiver dados para responder com precisão, diga isso claramente em uma frase.
