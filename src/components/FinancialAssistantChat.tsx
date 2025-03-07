@@ -57,10 +57,9 @@ export function FinancialAssistantChat({
 
   // Pré-calcular dados financeiros para melhorar a precisão das respostas
   const preCalculatedData = useMemo((): PreCalculatedData => {
-    // Verificar se transactionsData é um array válido
-    if (!Array.isArray(transactionsData)) {
-      console.error("transactionsData não é um array", transactionsData);
-      // Retornar objeto vazio se não for um array válido
+    // Verificar se transactionsData é um objeto válido com arrays
+    if (!transactionsData || typeof transactionsData !== 'object') {
+      console.error("transactionsData não é um objeto válido", transactionsData);
       return {
         totalExpenses: 0,
         totalIncome: 0,
@@ -76,8 +75,16 @@ export function FinancialAssistantChat({
       };
     }
     
-    // Filtrar transações para o mês e ano selecionados
-    const filteredTransactions = transactionsData.filter(t => 
+    // Extrair e filtrar transações para o mês e ano selecionados
+    const filteredIncome = (transactionsData.receita || []).filter(t => 
+      t.year === selectedYear && t.month === selectedMonth
+    );
+    
+    const filteredExpenses = (transactionsData.despesa || []).filter(t => 
+      t.year === selectedYear && t.month === selectedMonth
+    );
+    
+    const filteredInvestments = (transactionsData.investimento || []).filter(t => 
       t.year === selectedYear && t.month === selectedMonth
     );
     
@@ -97,9 +104,9 @@ export function FinancialAssistantChat({
     // Transações com datas de vencimento próximas
     const upcomingDueDates: Array<{ category: string; amount: number; due_day: number }> = [];
     
-    // Processar cada transação
-    filteredTransactions.forEach(transaction => {
-      const { type, category, amount, is_completed, due_day } = transaction;
+    // Processar despesas
+    filteredExpenses.forEach(transaction => {
+      const { category, amount, is_completed, due_day } = transaction;
       
       // Contar transações pendentes e completadas
       if (is_completed === true) {
@@ -108,27 +115,48 @@ export function FinancialAssistantChat({
         pendingTransactions++;
       }
       
-      // Processar por tipo
-      if (type === 'despesa') {
-        totalExpenses += amount;
-        expensesByCategory[category] = (expensesByCategory[category] || 0) + amount;
-        
-        // Verificar se é a maior despesa
-        if (amount > biggestExpense.amount) {
-          biggestExpense = { category, amount };
-        }
-        
-        // Adicionar à lista de próximos vencimentos se tiver due_day
-        if (due_day !== null && due_day !== undefined) {
-          upcomingDueDates.push({ category, amount, due_day });
-        }
-      } else if (type === 'receita') {
-        totalIncome += amount;
-        incomesByCategory[category] = (incomesByCategory[category] || 0) + amount;
-      } else if (type === 'investimento') {
-        totalInvestments += amount;
-        investmentsByCategory[category] = (investmentsByCategory[category] || 0) + amount;
+      totalExpenses += amount;
+      expensesByCategory[category] = (expensesByCategory[category] || 0) + amount;
+      
+      // Verificar se é a maior despesa
+      if (amount > biggestExpense.amount) {
+        biggestExpense = { category, amount };
       }
+      
+      // Adicionar à lista de próximos vencimentos se tiver due_day
+      if (due_day !== null && due_day !== undefined) {
+        upcomingDueDates.push({ category, amount, due_day });
+      }
+    });
+    
+    // Processar receitas
+    filteredIncome.forEach(transaction => {
+      const { category, amount, is_completed } = transaction;
+      
+      // Contar transações pendentes e completadas
+      if (is_completed === true) {
+        completedTransactions++;
+      } else if (is_completed === false) {
+        pendingTransactions++;
+      }
+      
+      totalIncome += amount;
+      incomesByCategory[category] = (incomesByCategory[category] || 0) + amount;
+    });
+    
+    // Processar investimentos
+    filteredInvestments.forEach(transaction => {
+      const { category, amount, is_completed } = transaction;
+      
+      // Contar transações pendentes e completadas
+      if (is_completed === true) {
+        completedTransactions++;
+      } else if (is_completed === false) {
+        pendingTransactions++;
+      }
+      
+      totalInvestments += amount;
+      investmentsByCategory[category] = (investmentsByCategory[category] || 0) + amount;
     });
     
     // Ordenar vencimentos por dia
@@ -302,13 +330,18 @@ export function FinancialAssistantChat({
         return;
       }
       
-      // Verificar se os dados são válidos antes de enviá-los
-      let selectedTransactions = [];
-      if (Array.isArray(transactionsData)) {
-        selectedTransactions = transactionsData.filter(t => 
-          t.year === selectedYear && t.month === selectedMonth
-        ).slice(0, 20); // Limitar para não sobrecarregar o contexto
-      }
+      // Preparar transações para o contexto (limitadas para não sobrecarregar)
+      const selectedTransactions = {
+        receita: (transactionsData.receita || [])
+          .filter(t => t.year === selectedYear && t.month === selectedMonth)
+          .slice(0, 10),
+        despesa: (transactionsData.despesa || [])
+          .filter(t => t.year === selectedYear && t.month === selectedMonth)
+          .slice(0, 10),
+        investimento: (transactionsData.investimento || [])
+          .filter(t => t.year === selectedYear && t.month === selectedMonth)
+          .slice(0, 10)
+      };
       
       // Preparar dados pré-calculados para o contexto
       const financialContext = {
