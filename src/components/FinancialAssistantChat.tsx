@@ -334,16 +334,6 @@ export function FinancialAssistantChat({
         <CardTitle className="flex items-center gap-2">
           <Bot className="h-6 w-6 text-primary" />
           Assistente Financeiro
-        </CardTitle>
-        {(selectedYear && selectedMonth) ? (
-          <span className="text-sm text-gray-500">
-            Dados: {selectedMonth}/{selectedYear}
-          </span>
-        ) : (
-          <span className="text-sm text-orange-500">
-            Selecione mês e ano para análises precisas
-          </span>
-        )}
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
