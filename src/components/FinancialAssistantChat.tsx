@@ -222,7 +222,13 @@ export function FinancialAssistantChat() {
         
         // Atualizar dados mensais
         const monthData = monthlyData[year][month];
-        monthData[transaction.type] += transaction.amount; // Usa diretamente o tipo da transação
+        if (transaction.type === 'receita') {
+          monthData.receita += transaction.amount;
+        } else if (transaction.type === 'despesa') {
+          monthData.despesa += transaction.amount;
+        } else if (transaction.type === 'investimento') {
+          monthData.investimento += transaction.amount;
+        }
         
         // Atualizar categorias mensais
         if (!monthData.categories[transaction.category]) {
@@ -241,7 +247,13 @@ export function FinancialAssistantChat() {
         
         // Atualizar dados anuais
         const yearData = yearlyData[year];
-        yearData[transaction.type] += transaction.amount; // Usa diretamente o tipo da transação
+        if (transaction.type === 'receita') {
+          yearData.receita += transaction.amount;
+        } else if (transaction.type === 'despesa') {
+          yearData.despesa += transaction.amount;
+        } else if (transaction.type === 'investimento') {
+          yearData.investimento += transaction.amount;
+        }
         
         // Atualizar categorias anuais
         if (!yearData.categories[transaction.category]) {
