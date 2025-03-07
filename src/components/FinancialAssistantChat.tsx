@@ -6,12 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar } from '@/components/ui/avatar';
+import { supabase } from '@/lib/supabase';
 
 interface FinancialAssistantChatProps {
-  selectedYear: string;
-  selectedMonth: string;
   summaryData: SummaryData;
-  transactionsData: TransactionsData;
   completionData: CompletionData;
 }
 
@@ -22,10 +20,7 @@ type Message = {
 };
 
 export function FinancialAssistantChat({
-  selectedYear,
-  selectedMonth,
   summaryData,
-  transactionsData,
   completionData
 }: FinancialAssistantChatProps) {
   const [messages, setMessages] = useState<Message[]>([
@@ -37,8 +32,26 @@ export function FinancialAssistantChat({
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [transactionsData, setTransactionsData] = useState<TransactionsData>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Buscar transações do Supabase
+  useEffect(() => {
+    const fetchTransactions = async () => {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*');
+
+      if (error) {
+        console.error('Erro ao buscar transações:', error);
+      } else {
+        setTransactionsData(data);
+      }
+    };
+
+    fetchTransactions();
+  }, []);
 
   // Rolar para a mensagem mais recente
   const scrollToBottom = () => {
@@ -66,8 +79,6 @@ export function FinancialAssistantChat({
     try {
       // Preparar contexto com os dados financeiros
       const financialContext = {
-        year: selectedYear,
-        month: selectedMonth,
         summary: summaryData,
         transactions: transactionsData,
         completion: completionData
@@ -139,15 +150,6 @@ export function FinancialAssistantChat({
           <Bot className="mr-2 h-5 w-5 text-blue-600" />
           Assistente Financeiro
         </h2>
-        {(selectedYear && selectedMonth) ? (
-          <span className="text-sm text-gray-500">
-            Dados: {selectedMonth}/{selectedYear}
-          </span>
-        ) : (
-          <span className="text-sm text-orange-500">
-            Selecione mês e ano para análises precisas
-          </span>
-        )}
       </div>
 
       <ScrollArea className="flex-grow mb-4 pr-4">
@@ -190,12 +192,12 @@ export function FinancialAssistantChat({
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Pergunte sobre seus dados financeiros..."
-            disabled={isLoading || !selectedYear || !selectedMonth}
+            disabled={isLoading}
             className="flex-grow"
           />
           <Button 
             onClick={sendMessage}
-            disabled={isLoading || !input.trim() || !selectedYear || !selectedMonth}
+            disabled={isLoading || !input.trim()}
             className="bg-blue-600 hover:bg-blue-700"
           >
             {isLoading ? (
@@ -205,11 +207,6 @@ export function FinancialAssistantChat({
             )}
           </Button>
         </div>
-        {(!selectedYear || !selectedMonth) && (
-          <p className="text-xs text-orange-500 mt-2">
-            Selecione o ano e mês para começar a conversar com o assistente.
-          </p>
-        )}
       </div>
     </div>
   );
