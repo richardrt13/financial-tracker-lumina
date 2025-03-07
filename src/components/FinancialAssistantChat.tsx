@@ -72,9 +72,8 @@ type FinancialAssistantChatProps = {
   completionData: CompletionData;
   selectedYear: string;
   selectedMonth: string;
-  allTransactionsHistory?: Transaction[]; // New prop for complete history
+  allTransactionsHistory?: Transaction[];
 };
-
 
 export function FinancialAssistantChat({
   summaryData,
@@ -146,6 +145,9 @@ export function FinancialAssistantChat({
       Pergunta atual do usuário: ${input}
       
       Responda de forma concisa, amigável e direta. Se o usuário pedir insights ou análises, foque nas informações mais relevantes baseadas nos dados apresentados. Se possível, ofereça dicas práticas ou sugestões baseadas no comportamento financeiro observado.
+      
+      Dados de gastos por categoria:
+      ${JSON.stringify(financialContext.categorySpending, null, 2)}
       `;
       
       const result = await model.generateContent(prompt);
@@ -180,6 +182,20 @@ export function FinancialAssistantChat({
       ...transactionsData.despesa,
       ...transactionsData.investimento
     ];
+
+    // Group transactions by category and sum amounts for all types
+    const categorySpending = currentTransactions.reduce((acc, transaction) => {
+      const category = transaction.category;
+      if (!acc[category]) {
+        acc[category] = {
+          receita: 0,
+          despesa: 0,
+          investimento: 0
+        };
+      }
+      acc[category][transaction.type as 'receita' | 'despesa' | 'investimento'] += transaction.amount;
+      return acc;
+    }, {} as Record<string, { receita: number; despesa: number; investimento: number }>);
 
     // Group historical transactions by year and month for trend analysis
     const transactionsByYearMonth = allHistoricalTransactions.reduce((acc, transaction) => {
@@ -218,6 +234,7 @@ export function FinancialAssistantChat({
       currentPeriodSummary: summaryData,
       completionStats: completionData,
       currentTransactions,
+      categorySpending, // Add category spending to the context
       historicalData: {
         transactionsByYearMonth: Object.values(transactionsByYearMonth),
         topCategories,
