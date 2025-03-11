@@ -109,6 +109,8 @@ export function TransactionForm() {
   const [currentYear, setCurrentYear] = useState<string>(String(new Date().getFullYear()));
   // Adicionar estado para o máximo de dias no mês
   const [maxDaysInMonth, setMaxDaysInMonth] = useState<number>(31);
+  // Adicionar estado para o valor formatado do input monetário
+  const [formattedAmount, setFormattedAmount] = useState<string>("0,00");
 
   useEffect(() => {
     const checkUser = async () => {
@@ -341,6 +343,8 @@ export function TransactionForm() {
       setRecurringMonthsInput("1");
       // Reset due day input
       setDueDayInput("");
+      // Reset the amount input to 0,00
+      setFormattedAmount("0,00");
       
       transactionEvents.notify();
     } catch (error) {
@@ -420,6 +424,35 @@ export function TransactionForm() {
         form.setValue("dueDay", value);
       }
     }
+  };
+
+  // Função para lidar com a mudança no campo de valor monetário
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = e.target.value;
+    
+    // Remove todos os caracteres não numéricos
+    value = value.replace(/\D/g, "");
+    
+    // Se estiver vazio, mostrar 0,00
+    if (value === "") {
+      setFormattedAmount("0,00");
+      form.setValue("amount", "0");
+      return;
+    }
+    
+    // Converte para número e formata com 2 casas decimais
+    const numericValue = parseInt(value) / 100;
+    
+    // Formata no estilo brasileiro (com vírgula)
+    const formatted = numericValue.toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+    
+    setFormattedAmount(formatted);
+    
+    // Atualiza o formulário com o valor numérico
+    form.setValue("amount", numericValue.toString());
   };
 
   return (
@@ -543,18 +576,15 @@ export function TransactionForm() {
           <FormField
             control={form.control}
             name="amount"
-            render={({ field: { onChange, ...field } }) => (
+            render={({ field }) => (
               <FormItem>
                 <FormLabel>Valor</FormLabel>
                 <FormControl>
                   <Input
                     type="text"
                     placeholder="0,00"
-                    {...field}
-                    onChange={(e) => {
-                      const value = e.target.value.replace(",", ".");
-                      onChange(value);
-                    }}
+                    value={formattedAmount}
+                    onChange={handleAmountChange}
                   />
                 </FormControl>
                 <FormMessage />
