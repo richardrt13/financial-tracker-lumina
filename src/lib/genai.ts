@@ -11,7 +11,7 @@ if (!API_KEY) {
 const genai = new GoogleGenerativeAI(API_KEY);
 
 // Configuração do modelo generativo
-const modelName = "gemini-1.5-flash"; // Nome do modelo que você deseja usar
+const modelName = "gemini-2.0-flash"; // Nome do modelo que você deseja usar
 const generativeModel = genai.getGenerativeModel({ model: modelName });
 
 // Função para gerar conteúdo com base em um prompt
