@@ -1,4 +1,5 @@
-// Tipos básicos para transações e dados relacionados
+// Definição de tipos para o Dashboard
+
 export type Transaction = {
   id: number;
   year: string;
@@ -18,6 +19,7 @@ export type TransactionsData = {
   receita: Transaction[];
   despesa: Transaction[];
   investimento: Transaction[];
+  [key: string]: Transaction[];
 };
 
 export type SummaryData = {
@@ -25,6 +27,7 @@ export type SummaryData = {
   despesa: number;
   investimento: number;
   saldo: number;
+  [key: string]: number;
 };
 
 export type CompletionData = {
@@ -39,6 +42,11 @@ export type CompletionData = {
     percentage: number;
   };
   investimento: {
+    count: number;
+    completed: number;
+    percentage: number;
+  };
+  [key: string]: {
     count: number;
     completed: number;
     percentage: number;
@@ -63,6 +71,3 @@ export type SummaryCardType = {
   type: string;
   color: string;
 };
-
-// Utilidades de estado para vencimento
-export type VencimentoStatus = "atrasado" | "hoje" | "proximo" | "normal" | null;
