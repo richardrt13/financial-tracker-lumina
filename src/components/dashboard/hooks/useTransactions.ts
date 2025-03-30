@@ -1,11 +1,21 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { transactionEvents } from '@/lib/transactionEvents';
 import { toast } from "@/components/ui/use-toast";
-import { Transaction, TransactionsData, SummaryData, CompletionData, DueSoonData, EditFormData } from '../types';
-import { sortTransactionsByDueDay, getVencimentoStatus, getCurrentMonthName } from '../utils/transactionUtils';
+import { 
+  Transaction, 
+  TransactionsData, 
+  SummaryData, 
+  CompletionData,
+  DueSoonData,
+  EditFormData
+} from '../types';
+import { sortTransactionsByDueDay } from '../utils/transactionUtils';
 
-export const useTransactions = (userId: string | null, selectedYear: string, selectedMonth: string) => {
+export function useTransactions(
+  userId: string | null, 
+  selectedYear: string, 
+  selectedMonth: number
+) {
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [summaryData, setSummaryData] = useState<SummaryData>({
@@ -30,15 +40,18 @@ export const useTransactions = (userId: string | null, selectedYear: string, sel
     transactions: [],
   });
   const [allTransactionsHistory, setAllTransactionsHistory] = useState<Transaction[]>([]);
-  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
-  const [editFormData, setEditFormData] = useState<EditFormData>({
-    description: '',
-    category: '',
-    amount: '',
-    due_day: ''
-  });
 
-  // Buscar histórico completo de transações
+  // Converter o índice do mês para o nome do mês
+  const getMonthName = (monthIndex: number) => {
+    const months = [
+      "Todos os Meses",
+      "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+      "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+    ];
+    return months[monthIndex];
+  };
+
+  // Buscar todo o histórico de transações
   const fetchAllHistoricalData = useCallback(async () => {
     if (!userId) return;
     
@@ -61,21 +74,44 @@ export const useTransactions = (userId: string | null, selectedYear: string, sel
     }
   }, [userId]);
 
-  // Função principal para buscar dados
+  // Configurar inscrição para mudanças em tempo real
+  useEffect(() => {
+    if (!userId) return;
+    
+    const subscription = supabase
+      .channel('transactions_changes')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'transactions',
+        filter: `user_id=eq.${userId}`
+      }, () => {
+        fetchData();
+      })
+      .subscribe();
+    
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [userId]);
+
+  // Função para buscar dados
   const fetchData = useCallback(async () => {
     if (!userId) return;
     
     setIsLoading(true);
     
     try {
+      const monthName = getMonthName(selectedMonth);
+
       let query = supabase
         .from('transactions')
         .select('*')
         .eq('user_id', userId)
         .eq('year', selectedYear);
 
-      if (selectedMonth !== "Todos os Meses") {
-        query = query.eq('month', selectedMonth);
+      if (monthName !== "Todos os Meses") {
+        query = query.eq('month', monthName);
       }
 
       const { data, error } = await query;
@@ -110,7 +146,7 @@ export const useTransactions = (userId: string | null, selectedYear: string, sel
       const today = new Date();
       const currentDay = today.getDate();
       const currentMonth = today.getMonth() + 1;
-      const currentMonthName = getCurrentMonthName();
+      const currentMonthName = getMonthName(currentMonth);
       const currentYear = today.getFullYear().toString();
       
       let dueSoonTransactions: Transaction[] = [];
@@ -118,11 +154,11 @@ export const useTransactions = (userId: string | null, selectedYear: string, sel
       
       data.forEach((transaction: Transaction) => {
         if (transaction.type === 'receita' || transaction.type === 'despesa' || transaction.type === 'investimento') {
-          transactionsByType[transaction.type as keyof TransactionsData].push(transaction);
+          transactionsByType[transaction.type].push(transaction);
           
-          completion[transaction.type as keyof CompletionData].count++;
+          completion[transaction.type].count++;
           if (transaction.is_completed) {
-            completion[transaction.type as keyof CompletionData].completed++;
+            completion[transaction.type].completed++;
           }
         }
         
@@ -188,7 +224,7 @@ export const useTransactions = (userId: string | null, selectedYear: string, sel
     }
   }, [userId, selectedYear, selectedMonth]);
 
-  // Alternar status de uma transação (concluída/pendente)
+  // Alternar status de uma transação
   const toggleTransactionStatus = async (transaction: Transaction) => {
     if (!userId) {
       toast({
@@ -247,10 +283,10 @@ export const useTransactions = (userId: string | null, selectedYear: string, sel
       setIsProcessing(false);
     }
   };
-
+  
   // Editar uma transação
-  const handleEditTransaction = async () => {
-    if (!selectedTransaction || !userId) return;
+  const handleEditTransaction = async (transaction: Transaction, editFormData: EditFormData) => {
+    if (!userId) return;
     
     setIsProcessing(true);
     
@@ -264,7 +300,6 @@ export const useTransactions = (userId: string | null, selectedYear: string, sel
           description: "Por favor, insira um valor válido.",
           variant: "destructive"
         });
-        setIsProcessing(false);
         return;
       }
       
@@ -274,7 +309,6 @@ export const useTransactions = (userId: string | null, selectedYear: string, sel
           description: "Por favor, insira um dia de vencimento válido (1-31).",
           variant: "destructive"
         });
-        setIsProcessing(false);
         return;
       }
       
@@ -286,7 +320,7 @@ export const useTransactions = (userId: string | null, selectedYear: string, sel
           amount: amount,
           due_day: dueDay
         })
-        .eq('id', selectedTransaction.id)
+        .eq('id', transaction.id)
         .eq('user_id', userId);
         
       if (error) {
@@ -305,6 +339,7 @@ export const useTransactions = (userId: string | null, selectedYear: string, sel
       });
       
       await fetchData();
+      return true;
     } catch (err) {
       console.error('Erro ao processar atualização:', err);
       toast({
@@ -312,14 +347,15 @@ export const useTransactions = (userId: string | null, selectedYear: string, sel
         description: "Ocorreu um erro ao processar sua solicitação.",
         variant: "destructive"
       });
+      return false;
     } finally {
       setIsProcessing(false);
     }
   };
 
   // Excluir uma transação
-  const handleDeleteTransaction = async () => {
-    if (!selectedTransaction || !userId) return;
+  const handleDeleteTransaction = async (transaction: Transaction) => {
+    if (!userId) return;
     
     setIsProcessing(true);
     
@@ -327,7 +363,7 @@ export const useTransactions = (userId: string | null, selectedYear: string, sel
       const { error } = await supabase
         .from('transactions')
         .delete()
-        .eq('id', selectedTransaction.id)
+        .eq('id', transaction.id)
         .eq('user_id', userId);
         
       if (error) {
@@ -337,7 +373,7 @@ export const useTransactions = (userId: string | null, selectedYear: string, sel
           description: "Não foi possível excluir a transação: " + error.message,
           variant: "destructive"
         });
-        return;
+        return false;
       }
       
       toast({
@@ -346,6 +382,7 @@ export const useTransactions = (userId: string | null, selectedYear: string, sel
       });
   
       await fetchData();
+      return true;
     } catch (err) {
       console.error('Erro ao processar exclusão:', err);
       toast({
@@ -353,72 +390,25 @@ export const useTransactions = (userId: string | null, selectedYear: string, sel
         description: "Ocorreu um erro ao processar sua solicitação.",
         variant: "destructive"
       });
+      return false;
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // Hook para buscar dados quando usuário, ano ou mês mudarem
-  useEffect(() => {
-    if (userId) {
-      fetchData();
-    }
-  }, [fetchData, userId, selectedYear, selectedMonth]);
-
-  // Buscar histórico completo
-  useEffect(() => {
-    if (userId) {
-      fetchAllHistoricalData();
-    }
-  }, [fetchAllHistoricalData, userId]);
-
-  // Inscrever para eventos de transação
-  useEffect(() => {
-    const unsubscribe = transactionEvents.subscribe(() => {
-      fetchData();
-    });
-    
-    return () => {
-      unsubscribe();
-    };
-  }, [fetchData]);
-
-  // Configurar inscrição para mudanças em tempo real
-  useEffect(() => {
-    if (!userId) return;
-    
-    const subscription = supabase
-      .channel('transactions_changes')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'transactions',
-        filter: `user_id=eq.${userId}`
-      }, () => {
-        fetchData();
-      })
-      .subscribe();
-    
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [userId, fetchData]);
-
   return {
     isLoading,
     isProcessing,
+    setIsProcessing,
     summaryData,
     completionData,
     transactionsData,
     dueSoonData,
     allTransactionsHistory,
-    selectedTransaction,
-    editFormData,
-    setSelectedTransaction,
-    setEditFormData,
     fetchData,
+    fetchAllHistoricalData,
     toggleTransactionStatus,
     handleEditTransaction,
     handleDeleteTransaction
   };
-};
+}
