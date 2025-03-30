@@ -1,15 +1,20 @@
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Transaction } from "../../types";
-import { TransactionList } from "../TransactionList";
+import { Transaction } from '../../types';
+import { TransactionItem } from '../TransactionItem';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface DueSoonDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   transactions: Transaction[];
   isProcessing: boolean;
-  onToggleStatus: (transaction: Transaction) => void;
-  onEdit: (transaction: Transaction) => void;
-  onDelete: (transaction: Transaction) => void;
+  onToggleStatus: (transaction: Transaction) => Promise<void>;
+  onEditClick: (transaction: Transaction) => void;
 }
 
 export function DueSoonDialog({
@@ -18,8 +23,7 @@ export function DueSoonDialog({
   transactions,
   isProcessing,
   onToggleStatus,
-  onEdit,
-  onDelete
+  onEditClick
 }: DueSoonDialogProps) {
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -32,13 +36,26 @@ export function DueSoonDialog({
             Transações que vencem nos próximos 7 dias
           </DialogDescription>
         </DialogHeader>
-        <TransactionList
-          transactions={transactions}
-          isProcessing={isProcessing}
-          onToggleStatus={onToggleStatus}
-          onEdit={onEdit}
-          onDelete={onDelete}
-        />
+        <div className="space-y-4 max-h-[70vh] overflow-y-auto">
+          {transactions.length > 0 ? (
+            transactions.map((transaction) => (
+              <TransactionItem
+                key={transaction.id}
+                transaction={transaction}
+                isProcessing={isProcessing}
+                onToggleStatus={onToggleStatus}
+                onEditClick={onEditClick}
+                showDelete={false}
+                highlightDueDate={true}
+                className="border-amber-200 bg-amber-50 hover:bg-amber-100"
+              />
+            ))
+          ) : (
+            <p className="text-center py-6 text-gray-500">
+              Nenhum pagamento próximo do vencimento encontrado.
+            </p>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );
