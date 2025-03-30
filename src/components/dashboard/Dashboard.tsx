@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { transactionEvents } from '@/lib/supabase';
+import { transactionEvents } from '@/lib/transactionEvents';
 import { toast } from "@/components/ui/use-toast";
 import { Loader2 } from "lucide-react";
 
