@@ -979,10 +979,12 @@ export function Dashboard({ budgetId }: DashboardProps) {
         </CardHeader>
         <CardContent>
           <FinancialAssistantChat 
-            transactionHistory={allTransactionsHistory} 
-            summaryData={summaryData} 
-            selectedYear={selectedYear} 
+            summaryData={summaryData}
+            transactionsData={transactionsData}
+            completionData={completionData}
+            selectedYear={selectedYear}
             selectedMonth={selectedMonth}
+            allTransactionsHistory={allTransactionsHistory}
           />
         </CardContent>
       </Card>
