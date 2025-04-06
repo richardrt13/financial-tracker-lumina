@@ -77,7 +77,7 @@ type FinancialAssistantChatProps = {
 
 export function FinancialAssistantChat({
   summaryData,
-  transactionsData,
+  transactionsData = { receita: [], despesa: [], investimento: [] },
   completionData,
   allTransactionsHistory = []
 }: FinancialAssistantChatProps) {
@@ -181,6 +181,10 @@ export function FinancialAssistantChat({
 
   // Prepare structured financial context
   const prepareFinancialContext = () => {
+    if (!transactionsData || !transactionsData.receita) {
+      console.error('Erro: transactionsData ou transactionsData.receita não está definido.');
+      return;
+    }
     // Merge all transactions from current month
     const currentTransactions = [
       ...transactionsData.receita,
