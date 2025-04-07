@@ -41,7 +41,7 @@ type Transaction = {
   is_completed: boolean;
   completed_at?: string;
   due_day?: number;
-  budget_id: string; // Nova propriedade budget_id
+  budget_id: string;
 };
 
 type TransactionsData = {
@@ -82,7 +82,7 @@ type DueSoonData = {
 };
 
 interface DashboardProps {
-  budgetId: string; // Interface para receber budgetId como prop
+  budgetId: string;
 }
 
 export function Dashboard({ budgetId }: DashboardProps) {
@@ -126,17 +126,14 @@ export function Dashboard({ budgetId }: DashboardProps) {
     due_day: ''
   });
   
-  // Função para ordenar transações por data de vencimento
   const sortTransactionsByDueDay = (transactions: Transaction[]) => {
     return [...transactions].sort((a, b) => {
-      // Se não tiver due_day, coloca no final
       if (!a.due_day) return 1;
       if (!b.due_day) return -1;
       return a.due_day - b.due_day;
     });
   };
 
-  // Verificar se o usuário está autenticado
   useEffect(() => {
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -164,7 +161,7 @@ export function Dashboard({ budgetId }: DashboardProps) {
         .from('transactions')
         .select('*')
         .eq('user_id', userId)
-        .eq('budget_id', budgetId) // Filtrando por budget_id
+        .eq('budget_id', budgetId)
         .order('year', { ascending: false })
         .order('month', { ascending: false });
         
@@ -179,7 +176,6 @@ export function Dashboard({ budgetId }: DashboardProps) {
     }
   }, [userId, budgetId]);
 
-  // Função para buscar dados
   const fetchData = useCallback(async () => {
     if (!userId || !budgetId) return;
     
@@ -190,7 +186,7 @@ export function Dashboard({ budgetId }: DashboardProps) {
         .from('transactions')
         .select('*')
         .eq('user_id', userId)
-        .eq('budget_id', budgetId) // Filtrando por budget_id
+        .eq('budget_id', budgetId)
         .eq('year', selectedYear);
 
       if (selectedMonth !== "Todos os Meses") {
@@ -225,7 +221,6 @@ export function Dashboard({ budgetId }: DashboardProps) {
         investimento: { count: 0, completed: 0, percentage: 0 },
       };
       
-      // Verificar transações próximas do vencimento (próximos 7 dias)
       const today = new Date();
       const currentDay = today.getDate();
       const currentMonth = today.getMonth() + 1;
@@ -253,7 +248,6 @@ export function Dashboard({ budgetId }: DashboardProps) {
           totalInvestimento += transaction.amount;
         }
         
-        // Verificar se a transação está próxima do vencimento
         if (
           transaction.due_day && 
           !transaction.is_completed && 
@@ -277,7 +271,6 @@ export function Dashboard({ budgetId }: DashboardProps) {
         completion[type].percentage = count ? Math.round((completed / count) * 100) : 0;
       });
       
-      // Ordenar transações por data de vencimento
       transactionsByType.receita = sortTransactionsByDueDay(transactionsByType.receita);
       transactionsByType.despesa = sortTransactionsByDueDay(transactionsByType.despesa);
       transactionsByType.investimento = sortTransactionsByDueDay(transactionsByType.investimento);
@@ -307,7 +300,6 @@ export function Dashboard({ budgetId }: DashboardProps) {
     }
   }, [userId, budgetId, selectedYear, selectedMonth]);
 
-  // Buscar dados quando usuário, budgetId, ano ou mês mudarem
   useEffect(() => {
     if (userId && budgetId) {
       fetchData();
@@ -320,7 +312,6 @@ export function Dashboard({ budgetId }: DashboardProps) {
     }
   }, [fetchAllHistoricalData, userId, budgetId]);
 
-  // Inscrever para eventos de transação
   useEffect(() => {
     const unsubscribe = transactionEvents.subscribe(() => {
       fetchData();
@@ -331,7 +322,6 @@ export function Dashboard({ budgetId }: DashboardProps) {
     };
   }, [fetchData]);
 
-  // Configurar inscrição para mudanças em tempo real
   useEffect(() => {
     if (!userId || !budgetId) return;
     
@@ -341,7 +331,7 @@ export function Dashboard({ budgetId }: DashboardProps) {
         event: '*',
         schema: 'public',
         table: 'transactions',
-        filter: `user_id=eq.${userId} AND budget_id=eq.${budgetId}` // Filtrando por budget_id
+        filter: `user_id=eq.${userId} AND budget_id=eq.${budgetId}`
       }, () => {
         fetchData();
       })
@@ -405,7 +395,7 @@ export function Dashboard({ budgetId }: DashboardProps) {
         .update(updateData)
         .eq('id', transaction.id)
         .eq('user_id', userId)
-        .eq('budget_id', budgetId); // Garantindo que estamos atualizando a transação correta
+        .eq('budget_id', budgetId);
         
       if (error) {
         console.error('Erro ao atualizar status da transação:', error);
@@ -474,7 +464,7 @@ export function Dashboard({ budgetId }: DashboardProps) {
         })
         .eq('id', selectedTransaction.id)
         .eq('user_id', userId)
-        .eq('budget_id', budgetId) // Garantindo que estamos atualizando a transação correta
+        .eq('budget_id', budgetId)
         .select();
         
       if (error) {
@@ -518,7 +508,7 @@ export function Dashboard({ budgetId }: DashboardProps) {
         .delete()
         .eq('id', selectedTransaction.id)
         .eq('user_id', userId)
-        .eq('budget_id', budgetId); // Garantindo que estamos excluindo a transação correta
+        .eq('budget_id', budgetId);
         
       if (error) {
         console.error('Erro ao excluir transação:', error);
@@ -552,19 +542,40 @@ export function Dashboard({ budgetId }: DashboardProps) {
 
   const formatDate = (dateString: string | undefined) => {
     if (!dateString) return '';
+    
     const date = new Date(dateString);
-    return date.toLocaleDateString('pt-BR');
+    // Ajusta para o timezone local
+    const offset = date.getTimezoneOffset();
+    const localDate = new Date(date.getTime() - (offset * 60 * 1000));
+    
+    return localDate.toLocaleDateString('pt-BR');
   };
   
-  const getDaysToVencimento = (dueDay: number | undefined) => {
-    if (!dueDay) return null;
+  const formatDateTime = (dateString: string | undefined) => {
+    if (!dateString) return '';
     
+    const date = new Date(dateString);
+    // Ajusta para o timezone local
+    const offset = date.getTimezoneOffset();
+    const localDate = new Date(date.getTime() - (offset * 60 * 1000));
+    
+    return localDate.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+  
+  function getDaysToVencimento(dueDay: number | undefined) {
+    if (!dueDay) return null;
+
     const today = new Date();
     const currentDay = today.getDate();
-    
-    // Calcular dias restantes
+
     return dueDay - currentDay;
-  };
+  }
   
   const getVencimentoStatus = (dueDay: number | undefined) => {
     if (!dueDay) return null;
@@ -636,7 +647,6 @@ export function Dashboard({ budgetId }: DashboardProps) {
           </Select>
         </div>
         
-        {/* Alerta de vencimentos próximos */}
         {dueSoonData.count > 0 && (
           <div className="w-full sm:w-auto">
             <Button 
@@ -702,7 +712,6 @@ export function Dashboard({ budgetId }: DashboardProps) {
         </div>
       )}
 
-      {/* Diálogo de listagem de transações */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
@@ -734,7 +743,6 @@ export function Dashboard({ budgetId }: DashboardProps) {
                           {transaction.description || transaction.category}
                         </h3>
                         
-                        {/* Badges para vencimento */}
                         {transaction.due_day && !transaction.is_completed && (
                           <>
                             {getVencimentoStatus(transaction.due_day) === "atrasado" && (
@@ -758,6 +766,9 @@ export function Dashboard({ budgetId }: DashboardProps) {
                           Vencimento: dia {transaction.due_day}
                         </p>
                       )}
+                      <p className="text-xs text-gray-500 mt-1">
+                        Criado em: {formatDateTime(transaction.created_at)}
+                      </p>
                     </div>
                     <div className="text-right mr-4">
                       <p className="font-semibold">
@@ -805,7 +816,6 @@ export function Dashboard({ budgetId }: DashboardProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Diálogo de edição de transação */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -865,7 +875,6 @@ export function Dashboard({ budgetId }: DashboardProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Diálogo de confirmação de exclusão */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -884,7 +893,6 @@ export function Dashboard({ budgetId }: DashboardProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Diálogo de transações próximas a vencer */}
       <Dialog open={isDueSoonDialogOpen} onOpenChange={setIsDueSoonDialogOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
@@ -915,7 +923,6 @@ export function Dashboard({ budgetId }: DashboardProps) {
                         {transaction.description || transaction.category}
                       </h3>
                       
-                      {/* Badge para vencimento */}
                       {transaction.due_day && (
                         <>
                           {getVencimentoStatus(transaction.due_day) === "hoje" ? (
@@ -932,6 +939,9 @@ export function Dashboard({ budgetId }: DashboardProps) {
                     <p className="text-xs text-gray-500 mt-1 flex items-center">
                       <Calendar className="h-3 w-3 mr-1" />
                       Vencimento: dia {transaction.due_day}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Criado em: {formatDateTime(transaction.created_at)}
                     </p>
                   </div>
                   <div className="text-right mr-4">
@@ -969,7 +979,6 @@ export function Dashboard({ budgetId }: DashboardProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Assistente Financeiro */}
       <Card className="mt-8">
         <CardHeader>
           <CardTitle>Assistente Financeiro</CardTitle>

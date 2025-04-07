@@ -1,5 +1,5 @@
-import { TransactionForm } from "@/components/TransactionFormm";
-import { Dashboard } from "@/components/Dashboardd";
+import { TransactionForm } from "@/components/TransactionForm";
+import { Dashboard } from "@/components/Dashboard";
 import Header from "@/components/Header";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
