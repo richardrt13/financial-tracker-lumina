@@ -1,7 +1,7 @@
 // /components/dashboard/ui/TransactionList.tsx
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
-import { Calendar, MoreVertical, Edit, Trash2 } from "lucide-react";
+import { Calendar, MoreVertical, Edit, Trash2, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -12,6 +12,7 @@ import {
 import { Transaction } from '../types';
 import { formatDateTime, formatDate } from '../utils/formatters';
 import { getDaysToVencimento, getVencimentoStatus } from '../utils/helpers';
+import { useState, useEffect } from 'react';
 
 interface TransactionListProps {
   transactions: Transaction[];
@@ -22,6 +23,9 @@ interface TransactionListProps {
   highlightDueDate?: boolean;
 }
 
+type SortField = 'created_at' | 'description' | 'amount';
+type SortDirection = 'asc' | 'desc';
+
 export function TransactionList({
   transactions,
   onEditClick,
@@ -30,9 +34,78 @@ export function TransactionList({
   isProcessing,
   highlightDueDate = false
 }: TransactionListProps) {
+  const [sortField, setSortField] = useState<SortField>('created_at');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [sortedTransactions, setSortedTransactions] = useState<Transaction[]>(transactions);
+
+  // Re-sort transactions when the original transactions prop changes or sort settings change
+  useEffect(() => {
+    const sorted = [...transactions].sort((a, b) => {
+      if (sortField === 'created_at') {
+        const dateA = new Date(a.created_at).getTime();
+        const dateB = new Date(b.created_at).getTime();
+        return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+      } else if (sortField === 'description') {
+        const descA = (a.description || a.category || '').toLowerCase();
+        const descB = (b.description || b.category || '').toLowerCase();
+        return sortDirection === 'asc' 
+          ? descA.localeCompare(descB)
+          : descB.localeCompare(descA);
+      } else if (sortField === 'amount') {
+        return sortDirection === 'asc' ? a.amount - b.amount : b.amount - a.amount;
+      }
+      return 0;
+    });
+    
+    setSortedTransactions(sorted);
+  }, [transactions, sortField, sortDirection]);
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      // Toggle direction if clicking the same field
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Set new field and default to ascending
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const renderSortIcon = (field: SortField) => {
+    if (sortField !== field) {
+      return <ArrowUpDown className="ml-1 h-4 w-4 text-gray-400" />;
+    }
+    return sortDirection === 'asc' 
+      ? <ArrowUp className="ml-1 h-4 w-4 text-blue-500" />
+      : <ArrowDown className="ml-1 h-4 w-4 text-blue-500" />;
+  };
+
   return (
     <>
-      {transactions.map((transaction) => (
+      <div className="bg-white p-2 mb-4 rounded-lg border border-gray-200 flex justify-between">
+        <div className="flex space-x-4">
+          <button 
+            onClick={() => toggleSort('created_at')}
+            className="flex items-center text-sm font-medium hover:text-blue-600"
+          >
+            Data {renderSortIcon('created_at')}
+          </button>
+          <button 
+            onClick={() => toggleSort('description')}
+            className="flex items-center text-sm font-medium hover:text-blue-600"
+          >
+            Nome {renderSortIcon('description')}
+          </button>
+          <button 
+            onClick={() => toggleSort('amount')}
+            className="flex items-center text-sm font-medium hover:text-blue-600"
+          >
+            Valor {renderSortIcon('amount')}
+          </button>
+        </div>
+      </div>
+
+      {sortedTransactions.map((transaction) => (
         <div 
           key={transaction.id} 
           className={`p-4 rounded-lg border ${transaction.is_completed 
