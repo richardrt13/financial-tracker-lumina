@@ -24,7 +24,14 @@ interface DashboardProps {
 
 export function Dashboard({ budgetId }: DashboardProps) {
   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
-  const [selectedMonth, setSelectedMonth] = useState("Todos os Meses");
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const currentMonthIndex = new Date().getMonth(); // 0 (Jan) a 11 (Dez)
+    const months = [
+      "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+      "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+    ];
+    return months[currentMonthIndex];
+  });  
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
