@@ -57,6 +57,10 @@ const Index = () => {
   
   // Referência para rastrear se houve reordenação
   const reorderingOccurred = useRef(false);
+  // Referência para o elemento fantasma temporário
+  const ghostElementRef = useRef<HTMLDivElement | null>(null);
+  // Referência para o timeout da animação de reordenação
+  const animationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Obter usuário atual e carregar orçamentos
   useEffect(() => {
@@ -71,6 +75,19 @@ const Index = () => {
     };
     
     checkUser();
+  }, []);
+
+  // Limpar elemento fantasma e timeouts quando o componente for desmontado
+  useEffect(() => {
+    return () => {
+      if (ghostElementRef.current && document.body.contains(ghostElementRef.current)) {
+        document.body.removeChild(ghostElementRef.current);
+      }
+      
+      if (animationTimeoutRef.current) {
+        clearTimeout(animationTimeoutRef.current);
+      }
+    };
   }, []);
 
   // Buscar orçamentos do usuário
@@ -159,33 +176,89 @@ const Index = () => {
     setIsLoading(false);
   };
 
-  // Funções para Drag and Drop
-  const handleDragStart = (budget: Budget) => {
+  // Funções otimizadas para Drag and Drop
+  const handleDragStart = (e: React.DragEvent, budget: Budget) => {
+    // Definir os dados transferidos
+    e.dataTransfer.setData('text/plain', budget.id);
+    e.dataTransfer.effectAllowed = 'move';
+    
+    // Criar elemento fantasma personalizado para melhorar a visualização
+    const ghostElement = document.createElement('div');
+    ghostElement.innerHTML = `
+      <div style="
+        padding: 8px 12px;
+        background-color: #f3f4f6;
+        border: 1px solid #d1d5db;
+        border-radius: 4px;
+        width: 200px;
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 14px;
+        color: #1f2937;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      ">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #6b7280">
+          <circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/>
+          <circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/>
+        </svg>
+        ${budget.name}
+      </div>
+    `;
+    ghostElement.style.position = 'absolute';
+    ghostElement.style.top = '-1000px';
+    ghostElement.style.pointerEvents = 'none';
+    
+    // Adicionar o elemento ao corpo e armazenar a referência
+    document.body.appendChild(ghostElement);
+    ghostElementRef.current = ghostElement;
+    
+    // Definir a imagem personalizada para o arrasto
+    const firstElement = ghostElement.firstElementChild as HTMLElement;
+    if (firstElement) {
+      e.dataTransfer.setDragImage(firstElement, 15, 15);
+    }
+    
+    // Atualizar o estado
     setDraggedItem(budget);
     setIsDragging(true);
+    
+    // Aplicar classe que impede seleção de texto durante o arrasto
+    document.body.classList.add('user-select-none');
+    
+    // Programar a remoção do elemento fantasma
+    setTimeout(() => {
+      if (ghostElementRef.current && document.body.contains(ghostElementRef.current)) {
+        document.body.removeChild(ghostElementRef.current);
+        ghostElementRef.current = null;
+      }
+    }, 0);
   };
 
+  // Manipular evento dragover no contêiner
+  const handleContainerDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  // Manipular evento dragover em um item
   const handleDragOver = (e: React.DragEvent, budgetId: string) => {
     e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    
+    if (!draggedItem || draggedItem.id === budgetId) return;
+    
+    // Atualizar o item sobre o qual estamos arrastando
     setDraggedOverItem(budgetId);
+    
+    // Mover o item visualmente enquanto arrasta
+    moveItem(draggedItem.id, budgetId);
   };
 
-  const handleDragEnd = () => {
-    setIsDragging(false);
-    setDraggedOverItem(null);
-    
-    // Salvar as mudanças apenas se houve reordenação
-    if (reorderingOccurred.current) {
-      saveBudgetOrder();
-      reorderingOccurred.current = false;
-    }
-  };
-
-  const handleDrop = (targetBudgetId: string) => {
-    if (!draggedItem) return;
-    
-    const draggedItemIndex = budgets.findIndex(b => b.id === draggedItem.id);
-    const targetIndex = budgets.findIndex(b => b.id === targetBudgetId);
+  // Função para mover o item visualmente durante o arrasto
+  const moveItem = (sourceId: string, targetId: string) => {
+    const draggedItemIndex = budgets.findIndex(b => b.id === sourceId);
+    const targetIndex = budgets.findIndex(b => b.id === targetId);
     
     if (draggedItemIndex === targetIndex) return;
     
@@ -198,17 +271,89 @@ const Index = () => {
     // Inserir o item na nova posição
     newBudgets.splice(targetIndex, 0, draggedBudget);
     
+    // Atualizar a lista sem alterar as posições order_position ainda
+    // Isso permite o movimento visual durante o arrasto
+    setBudgets(newBudgets);
+  };
+
+  // Manipular evento dragenter em um item
+  const handleDragEnter = (e: React.DragEvent, budgetId: string) => {
+    e.preventDefault();
+    if (draggedItem && draggedItem.id !== budgetId) {
+      setDraggedOverItem(budgetId);
+    }
+  };
+
+  // Manipular evento dragleave em um item
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    // Não limpe o draggedOverItem aqui para manter a posição durante o arrasto
+  };
+
+  // Manipular evento dragend
+  const handleDragEnd = (e: React.DragEvent) => {
+    e.preventDefault();
+    
+    // Limpar estados e classes
+    setIsDragging(false);
+    setDraggedOverItem(null);
+    
+    // Salvar as mudanças apenas após todos os movimentos visuais
+    if (draggedItem) {
+      updateOrderPositions();
+      reorderingOccurred.current = true;
+      saveBudgetOrder();
+    }
+    
+    setDraggedItem(null);
+    document.body.classList.remove('user-select-none');
+    
+    // Certifique-se de que o elemento fantasma foi removido
+    if (ghostElementRef.current && document.body.contains(ghostElementRef.current)) {
+      document.body.removeChild(ghostElementRef.current);
+      ghostElementRef.current = null;
+    }
+    
+    // Limpar qualquer timeout pendente
+    if (animationTimeoutRef.current) {
+      clearTimeout(animationTimeoutRef.current);
+      animationTimeoutRef.current = null;
+    }
+  };
+
+  // Atualizar as posições order_position após a reordenação visual
+  const updateOrderPositions = () => {
     // Atualizar as posições de ordem em memória
-    const updatedBudgets = newBudgets.map((budget, index) => ({
+    const updatedBudgets = budgets.map((budget, index) => ({
       ...budget,
       order_position: index
     }));
     
     // Atualizar o estado
     setBudgets(updatedBudgets);
+  };
+
+  // Manipular evento drop
+  const handleDrop = (e: React.DragEvent, targetBudgetId: string) => {
+    e.preventDefault();
+    
+    const draggedItemId = e.dataTransfer.getData('text/plain');
+    if (!draggedItemId) return;
+    
+    const draggedItemObject = budgets.find(b => b.id === draggedItemId);
+    if (!draggedItemObject) return;
+    
+    // A reordenação visual já foi feita durante os eventos dragOver
+    // Agora apenas confirmar a operação
+    
+    // Atualizar as posições order_position
+    updateOrderPositions();
     
     // Sinalizar que houve reordenação
     reorderingOccurred.current = true;
+    
+    // Limpar estados
+    setDraggedOverItem(null);
   };
 
   // Salvar a nova ordem no banco de dados
@@ -216,12 +361,17 @@ const Index = () => {
     setIsLoading(true);
     
     try {
-      // Criar atualizações para todos os orçamentos
-      for (const budget of budgets) {
+      // Criar atualizações para todos os orçamentos com posições atualizadas
+      const updates = budgets.map((budget, index) => ({
+        id: budget.id,
+        order_position: index
+      }));
+      
+      for (const update of updates) {
         const { error } = await supabase
           .from('budgets')
-          .update({ order_position: budget.order_position })
-          .eq('id', budget.id);
+          .update({ order_position: update.order_position })
+          .eq('id', update.id);
           
         if (error) {
           throw new Error('Erro ao salvar a nova ordem dos orçamentos.');
@@ -339,6 +489,34 @@ const Index = () => {
     setBudgets(updatedBudgets);
   };
 
+  // Adicione um estilo global para impedir seleção durante o arrasto
+  // e para animar transições de posição
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.innerHTML = `
+      .user-select-none {
+        user-select: none !important;
+        -webkit-user-select: none !important;
+        -moz-user-select: none !important;
+        -ms-user-select: none !important;
+      }
+      
+      .budget-item {
+        transition: transform 0.12s ease-out;
+      }
+      
+      .dragging {
+        opacity: 0.5;
+        background-color: #f9fafb;
+      }
+    `;
+    document.head.appendChild(style);
+    
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+
   // Exibir mensagem de carregamento enquanto verifica o usuário
   if (isLoading) {
     return (
@@ -451,18 +629,23 @@ const Index = () => {
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            <ul className="space-y-2">
+            <ul 
+              className="space-y-2"
+              onDragOver={handleContainerDragOver}
+            >
               {budgets.map((budget) => (
                 <li 
                   key={budget.id}
-                  className={`flex items-center justify-between p-2 border rounded cursor-move
-                    ${draggedItem?.id === budget.id ? 'opacity-50 bg-gray-100' : ''}
+                  className={`flex items-center justify-between p-2 border rounded cursor-move budget-item
+                    ${draggedItem?.id === budget.id ? 'dragging' : ''}
                     ${draggedOverItem === budget.id ? 'border-blue-500 bg-blue-50' : ''}`}
-                  draggable
-                  onDragStart={() => handleDragStart(budget)}
+                  draggable="true"
+                  onDragStart={(e) => handleDragStart(e, budget)}
                   onDragOver={(e) => handleDragOver(e, budget.id)}
+                  onDragEnter={(e) => handleDragEnter(e, budget.id)}
+                  onDragLeave={handleDragLeave}
                   onDragEnd={handleDragEnd}
-                  onDrop={() => handleDrop(budget.id)}
+                  onDrop={(e) => handleDrop(e, budget.id)}
                 >
                   <div className="flex items-center gap-2">
                     <GripVertical className="h-4 w-4 text-gray-400" />
