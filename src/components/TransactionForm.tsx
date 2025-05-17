@@ -31,6 +31,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { VoiceCommandTransaction } from './VoiceCommandTransaction';
 
 const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
 const months = [
@@ -38,11 +39,8 @@ const months = [
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
 
-// Função para obter o número máximo de dias em um mês específico
-const getDaysInMonth = (month, year) => {
-  // Converte o nome do mês para o índice (0-11)
+const getDaysInMonth = (month: string, year: string) => {
   const monthIndex = months.indexOf(month);
-  // Retorna o último dia do mês (passando 0 como dia do próximo mês)
   return new Date(parseInt(year), monthIndex + 1, 0).getDate();
 };
 
@@ -77,21 +75,6 @@ const formSchema = z.object({
   }),
 });
 
-type Transaction = {
-  id?: number;
-  year: string;
-  month: string;
-  type: "receita" | "despesa" | "investimento";
-  category: string;
-  amount: number;
-  user_id: string;
-  budget_id: string; // Novo campo para o ID do orçamento
-  created_at?: Date;
-  is_completed?: boolean;
-  due_day?: number | null;
-};
-
-// Adicionar propriedade budgetId ao componente
 type TransactionFormProps = {
   budgetId: string;
 };
@@ -110,10 +93,23 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
   const [maxDaysInMonth, setMaxDaysInMonth] = useState<number>(31);
   const [formattedAmount, setFormattedAmount] = useState<string>("0,00");
 
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      year: String(new Date().getFullYear()),
+      month: months[new Date().getMonth()],
+      type: "receita",
+      category: "",
+      amount: 0,
+      isRecurring: false,
+      recurringMonths: "1",
+      dueDay: "",
+    },
+  });
+
   useEffect(() => {
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      
       if (session?.user) {
         setUserId(session.user.id);
       }
@@ -156,21 +152,6 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
     }
   }, [userId]);
 
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      year: String(new Date().getFullYear()),
-      month: months[new Date().getMonth()],
-      type: "receita",
-      category: "",
-      amount: 0,
-      isRecurring: false,
-      recurringMonths: "1",
-      dueDay: "",
-    },
-  });
-
-  // Resetar form quando o orçamento mudar
   useEffect(() => {
     if (budgetId) {
       form.reset({
@@ -187,24 +168,20 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
     }
   }, [budgetId, form]);
 
-  // Update current type when form type changes
   useEffect(() => {
     const subscription = form.watch((value, { name }) => {
       if (name === 'type' && value.type) {
         setCurrentType(value.type as "receita" | "despesa" | "investimento");
       }
       
-      // Atualizar mês e ano atual quando mudam, e calcular dias máximos
       if ((name === 'month' && value.month) || (name === 'year' && value.year)) {
         if (value.month) setCurrentMonth(value.month);
         if (value.year) setCurrentYear(value.year);
         
-        // Recalcular dias máximos no mês
         if (value.month && value.year) {
           const maxDays = getDaysInMonth(value.month, value.year);
           setMaxDaysInMonth(maxDays);
           
-          // Se o dia de vencimento atual for maior que o máximo, ajuste-o
           const currentDueDay = form.getValues("dueDay");
           if (currentDueDay && parseInt(currentDueDay) > maxDays) {
             form.setValue("dueDay", String(maxDays));
@@ -217,13 +194,70 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
     return () => subscription.unsubscribe();
   }, [form.watch]);
 
-  // Calcular dias máximos no mês inicial
   useEffect(() => {
     const maxDays = getDaysInMonth(currentMonth, currentYear);
     setMaxDaysInMonth(maxDays);
   }, [currentMonth, currentYear]);
 
-  async function onSubmit(values: z.infer<typeof formSchema>) {
+  const handleVoiceRecognition = (transactionInfo: any) => {
+    if (transactionInfo.type) {
+      form.setValue("type", transactionInfo.type);
+      setCurrentType(transactionInfo.type);
+    }
+    
+    if (transactionInfo.category) {
+      form.setValue("category", transactionInfo.category);
+    }
+    
+    if (transactionInfo.amount > 0) {
+      form.setValue("amount", transactionInfo.amount);
+      const formatted = transactionInfo.amount.toLocaleString('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+      setFormattedAmount(formatted);
+    }
+    
+    if (transactionInfo.month && months.includes(transactionInfo.month)) {
+      form.setValue("month", transactionInfo.month);
+      setCurrentMonth(transactionInfo.month);
+    }
+    
+    if (transactionInfo.year) {
+      form.setValue("year", transactionInfo.year);
+      setCurrentYear(transactionInfo.year);
+    }
+    
+    if (transactionInfo.isRecurring !== undefined) {
+      form.setValue("isRecurring", transactionInfo.isRecurring);
+      
+      if (transactionInfo.isRecurring && transactionInfo.recurringMonths) {
+        form.setValue("recurringMonths", transactionInfo.recurringMonths);
+        setRecurringMonthsInput(transactionInfo.recurringMonths);
+      }
+    }
+    
+    if (transactionInfo.dueDay) {
+      const maxDays = getDaysInMonth(
+        transactionInfo.month || currentMonth, 
+        transactionInfo.year || currentYear
+      );
+      
+      const dueDay = parseInt(transactionInfo.dueDay);
+      if (dueDay > 0 && dueDay <= maxDays) {
+        form.setValue("dueDay", String(dueDay));
+        setDueDayInput(String(dueDay));
+      }
+    }
+    
+    const maxDays = getDaysInMonth(
+      transactionInfo.month || currentMonth,
+      transactionInfo.year || currentYear
+    );
+    setMaxDaysInMonth(maxDays);
+  };
+
+  const onSubmit = async (values: z.infer<typeof formSchema>) => {
     if (!userId) {
       toast({
         title: "Erro",
@@ -242,10 +276,9 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
       return;
     }
     
-    // Validate recurringMonths before submission
     const recurringMonths = values.recurringMonths === '' ? 1 : 
-                           (typeof values.recurringMonths === 'string' ? 
-                            parseInt(values.recurringMonths) : values.recurringMonths);
+                         (typeof values.recurringMonths === 'string' ? 
+                          parseInt(values.recurringMonths) : values.recurringMonths);
     
     if (values.isRecurring && (isNaN(recurringMonths) || recurringMonths < 1 || recurringMonths > 60)) {
       toast({
@@ -264,22 +297,21 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
         category: values.category,
         amount: Number(values.amount),
         user_id: userId,
-        budget_id: budgetId, // Adicionar o ID do orçamento
+        budget_id: budgetId,
         is_completed: false,
         due_day: values.dueDay,
       };
       
       if (values.isRecurring) {
         const transactions = [];
-        let currentMonth = months.indexOf(values.month);
-        let currentYear = parseInt(values.year);
+        let currentMonthIdx = months.indexOf(values.month);
+        let currentYearVal = parseInt(values.year);
         
         for (let i = 0; i < recurringMonths; i++) {
-          // Verificar e ajustar o dia de vencimento para cada mês
           let adjustedDueDay = values.dueDay;
           
           if (adjustedDueDay) {
-            const maxDays = getDaysInMonth(months[currentMonth], String(currentYear));
+            const maxDays = getDaysInMonth(months[currentMonthIdx], String(currentYearVal));
             if (parseInt(adjustedDueDay) > maxDays) {
               adjustedDueDay = String(maxDays);
             }
@@ -287,33 +319,24 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
           
           transactions.push({
             ...baseTransaction,
-            year: String(currentYear),
-            month: months[currentMonth],
+            year: String(currentYearVal),
+            month: months[currentMonthIdx],
             is_completed: false,
             due_day: adjustedDueDay,
           });
           
-          currentMonth++;
-          if (currentMonth > 11) {
-            currentMonth = 0;
-            currentYear++;
+          currentMonthIdx++;
+          if (currentMonthIdx > 11) {
+            currentMonthIdx = 0;
+            currentYearVal++;
           }
         }
         
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('transactions')
-          .insert(transactions)
-          .select();
+          .insert(transactions);
           
-        if (error) {
-          console.error('Erro ao adicionar transações recorrentes:', error);
-          toast({
-            title: "Erro",
-            description: error.message || "Não foi possível salvar as transações. Tente novamente mais tarde.",
-            variant: "destructive"
-          });
-          return;
-        }
+        if (error) throw error;
         
         toast({
           title: "Sucesso",
@@ -324,30 +347,20 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
           ...baseTransaction,
           year: values.year,
           month: values.month,
-          is_completed: false,
         };
         
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('transactions')
-          .insert(transaction)
-          .select();
+          .insert(transaction);
         
-        if (error) {
-          console.error('Erro ao adicionar transação:', error);
-          toast({
-            title: "Erro",
-            description: error.message || "Não foi possível salvar a transação. Tente novamente mais tarde.",
-            variant: "destructive"
-          });
-          return;
-        }
+        if (error) throw error;
         
         toast({
           title: "Sucesso",
           description: "Transação adicionada com sucesso!",
         });
       }
-      // Reset the form
+      
       form.reset({
         year: values.year, 
         month: values.month, 
@@ -358,31 +371,28 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
         recurringMonths: "1",
         dueDay: "",
       });
-            
-      // Reset the recurring months input
+      
       setRecurringMonthsInput("1");
-      // Reset due day input
       setDueDayInput("");
-      // Reset the amount input to 0,00
       setFormattedAmount("0,00");
       
       transactionEvents.notify();
     } catch (error) {
-      console.error('Erro inesperado:', error);
+      console.error('Erro:', error);
       toast({
         title: "Erro",
-        description: "Ocorreu um erro ao processar sua solicitação.",
+        description: error.message || "Ocorreu um erro ao processar sua solicitação.",
         variant: "destructive"
       });
     } finally {
       setIsLoading(false);
     }
-  }
+  };
 
   const handleAddCategory = async () => {
     if (!newCategory.trim()) return;
     
-    const type = currentType; // Usa o tipo atual
+    const type = currentType;
     
     setCategories(prev => ({
       ...prev,
@@ -409,32 +419,23 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
     
     setNewCategory("");
     setIsNewCategoryDialogOpen(false);
-    
     form.setValue("category", newCategory.trim());
   };
 
-  // Handle recurring months input changes
   const handleRecurringMonthsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Permitir campo vazio
     setRecurringMonthsInput(e.target.value);
-    
-    // Atualizar o valor no formulário
     form.setValue("recurringMonths", e.target.value);
   };
 
-  // Handle due day input changes
   const handleDueDayChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     
-    // Permitir campo vazio ou apenas números
     if (value === '' || /^\d+$/.test(value)) {
       setDueDayInput(value);
       
-      // Se tem valor e é um número, verifique se é menor que o máximo de dias no mês
       if (value !== '' && parseInt(value) > 0) {
         const dayValue = parseInt(value);
         if (dayValue > maxDaysInMonth) {
-          // Se for maior, ajuste para o máximo
           setDueDayInput(String(maxDaysInMonth));
           form.setValue("dueDay", String(maxDaysInMonth));
         } else {
@@ -446,252 +447,281 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
     }
   };
 
-  // Função para lidar com a mudança no campo de valor monetário
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let value = e.target.value;
+    let value = e.target.value.replace(/\D/g, "");
     
-    // Remove todos os caracteres não numéricos
-    value = value.replace(/\D/g, "");
-    
-    // Se estiver vazio, mostrar 0,00
     if (value === "") {
       setFormattedAmount("0,00");
       form.setValue("amount", "0");
       return;
     }
     
-    // Converte para número e formata com 2 casas decimais
     const numericValue = parseInt(value) / 100;
-    
-    // Formata no estilo brasileiro (com vírgula)
     const formatted = numericValue.toLocaleString('pt-BR', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     });
     
     setFormattedAmount(formatted);
-    
-    // Atualiza o formulário com o valor numérico
     form.setValue("amount", numericValue.toString());
   };
 
   return (
     <>
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 w-full max-w-md">
-          <div className="flex gap-4">
-            <FormField
-              control={form.control}
-              name="year"
-              render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormLabel>Ano</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione o ano" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {years.map((year) => (
-                        <SelectItem key={year} value={String(year)}>
-                          {year}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
 
-            <FormField
-              control={form.control}
-              name="month"
-              render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormLabel>Mês</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione o mês" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {months.map((month) => (
-                        <SelectItem key={month} value={month}>
-                          {month}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
+      <VoiceCommandTransaction
+        onTransactionRecognized={handleVoiceRecognition}
+        onSubmitTransaction={async (transactionDataFromVoice) => {
+          // Prepara os dados brutos como Zod esperaria antes da transformação
+          const rawDataForZod = {
+            year: transactionDataFromVoice.year || String(new Date().getFullYear()),
+            month: transactionDataFromVoice.month || months[new Date().getMonth()],
+            type: transactionDataFromVoice.type,
+            category: transactionDataFromVoice.category, // `extractTransactionInfo` já garante uma categoria
+            amount: transactionDataFromVoice.amount, // `amount` já é um número vindo de `extractTransactionInfo`
+            isRecurring: transactionDataFromVoice.isRecurring,
+            recurringMonths: transactionDataFromVoice.recurringMonths, // String, o schema Zod e onSubmit lidam com "" -> "1"
+            dueDay: transactionDataFromVoice.dueDay, // String (pode ser "" ou "DD"), o schema Zod transformará "" para null
+          };
 
-          <FormField
-            control={form.control}
-            name="type"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Tipo</FormLabel>
-                <Select onValueChange={(value: "receita" | "despesa" | "investimento") => {
-                  field.onChange(value);
-                  setCurrentType(value); // Atualiza o tipo atual
-                  form.setValue("category", "");
-                }} defaultValue={field.value}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o tipo" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="receita">Receita</SelectItem>
-                    <SelectItem value="despesa">Despesa</SelectItem>
-                    <SelectItem value="investimento">Investimento</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <div className="flex gap-2 items-end">
-            <FormField
-              control={form.control}
-              name="category"
-              render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormLabel>Categoria</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione a categoria" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {categories[currentType]?.map((category) => (
-                        <SelectItem key={category} value={category}>
-                          {category}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={() => setIsNewCategoryDialogOpen(true)}
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-          </div>
-
-          <FormField
-            control={form.control}
-            name="amount"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Valor</FormLabel>
-                <FormControl>
-                  <Input
-                    type="text"
-                    placeholder="0,00"
-                    value={formattedAmount}
-                    onChange={handleAmountChange}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          {/* Dia de vencimento */}
-          <FormField
-            control={form.control}
-            name="dueDay"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Dia de Vencimento (opcional)</FormLabel>
-                <FormControl>
-                  <Input
-                    type="text"
-                    placeholder={`1-${maxDaysInMonth}`}
-                    value={dueDayInput}
-                    onChange={handleDueDayChange}
-                  />
-                </FormControl>
-                <FormMessage />
-                {maxDaysInMonth < 31 && (
-                  <p className="text-xs text-muted-foreground">
-                    Dias válidos para {currentMonth}: 1-{maxDaysInMonth}
-                  </p>
-                )}
-              </FormItem>
-            )}
-          />
-
-          <div className="space-y-4 mt-4">
-            <div className="flex items-center space-x-2">
+          try {
+            // Parse e valida os dados usando o schema Zod
+            // Isso aplicará as transformações, incluindo dueDay: "" -> null
+            const validatedData = formSchema.parse(rawDataForZod);
+            await onSubmit(validatedData); // Chama onSubmit com os dados validados e transformados
+          } catch (zodError) {
+            console.error("Zod validation error for voice command data:", zodError);
+            toast({
+              title: "Erro ao processar comando de voz",
+              description: "Os dados do comando de voz não puderam ser validados. Por favor, verifique o comando e tente novamente.",
+              variant: "destructive",
+            });
+          }
+        }}
+      />
+      
+      <div className="mt-6 border-t pt-6">
+        <h3 className="text-lg font-medium mb-4">Formulário Manual</h3>
+        
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 w-full max-w-md">
+            <div className="flex gap-4">
               <FormField
                 control={form.control}
-                name="isRecurring"
+                name="year"
                 render={({ field }) => (
-                  <FormItem className="flex flex-row items-center space-x-3 space-y-0">
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                        id="recurring-switch"
-                      />
-                    </FormControl>
-                    <div className="space-y-1 leading-none">
-                      <FormLabel>Transação Recorrente</FormLabel>
-                    </div>
+                  <FormItem className="flex-1">
+                    <FormLabel>Ano</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione o ano" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {years.map((year) => (
+                          <SelectItem key={year} value={String(year)}>
+                            {year}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="month"
+                render={({ field }) => (
+                  <FormItem className="flex-1">
+                    <FormLabel>Mês</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione o mês" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {months.map((month) => (
+                          <SelectItem key={month} value={month}>
+                            {month}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}
               />
             </div>
 
-            {form.watch("isRecurring") && (
+            <FormField
+              control={form.control}
+              name="type"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tipo</FormLabel>
+                  <Select 
+                    onValueChange={(value: "receita" | "despesa" | "investimento") => {
+                      field.onChange(value);
+                      setCurrentType(value); // Atualiza o tipo atual
+                      form.setValue("category", "");
+                    }} 
+                    defaultValue={field.value}
+                    value={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o tipo" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="receita">Receita</SelectItem>
+                      <SelectItem value="despesa">Despesa</SelectItem>
+                      <SelectItem value="investimento">Investimento</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="flex gap-2 items-end">
               <FormField
                 control={form.control}
-                name="recurringMonths"
+                name="category"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Duração (meses)</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="text"
-                        placeholder="Entre 1 e 60 meses"
-                        value={recurringMonthsInput}
-                        onChange={handleRecurringMonthsChange}
-                      />
-                    </FormControl>
+                  <FormItem className="flex-1">
+                    <FormLabel>Categoria</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione a categoria" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {categories[currentType]?.map((category) => (
+                          <SelectItem key={category} value={category}>
+                            {category}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-            )}
-          </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => setIsNewCategoryDialogOpen(true)}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
 
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={isLoading}
-          >
-            {isLoading ? "Adicionando..." : "Adicionar Transação"}
-          </Button>
-        </form>
-      </Form>
+            <FormField
+              control={form.control}
+              name="amount"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Valor</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="text"
+                      placeholder="0,00"
+                      value={formattedAmount}
+                      onChange={handleAmountChange}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
+            {/* Dia de vencimento */}
+            <FormField
+              control={form.control}
+              name="dueDay"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Dia de Vencimento (opcional)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="text"
+                      placeholder={`1-${maxDaysInMonth}`}
+                      value={dueDayInput}
+                      onChange={handleDueDayChange}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                  {maxDaysInMonth < 31 && (
+                    <p className="text-xs text-muted-foreground">
+                      Dias válidos para {currentMonth}: 1-{maxDaysInMonth}
+                    </p>
+                  )}
+                </FormItem>
+              )}
+            />
+
+            <div className="space-y-4 mt-4">
+              <div className="flex items-center space-x-2">
+                <FormField
+                  control={form.control}
+                  name="isRecurring"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center space-x-3 space-y-0">
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          id="recurring-switch"
+                        />
+                      </FormControl>
+                      <div className="space-y-1 leading-none">
+                        <FormLabel>Transação Recorrente</FormLabel>
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              {form.watch("isRecurring") && (
+                <FormField
+                  control={form.control}
+                  name="recurringMonths"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Duração (meses)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="text"
+                          placeholder="Entre 1 e 60 meses"
+                          value={recurringMonthsInput}
+                          onChange={handleRecurringMonthsChange}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+            </div>
+
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={isLoading}
+            >
+              {isLoading ? "Adicionando..." : "Adicionar Transação"}
+            </Button>
+          </form>
+        </Form>
+      </div>
       <Dialog open={isNewCategoryDialogOpen} onOpenChange={setIsNewCategoryDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
