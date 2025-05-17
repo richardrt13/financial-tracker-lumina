@@ -468,37 +468,66 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
 
   return (
     <>
-
+    
       <VoiceCommandTransaction
-        onTransactionRecognized={handleVoiceRecognition}
+        onTransactionRecognized={handleVoiceRecognition} // This populates the form
         onSubmitTransaction={async (transactionDataFromVoice) => {
-          // Prepara os dados brutos como Zod esperaria antes da transformação
+          // This function is called by VoiceCommandTransaction.tsx after onTransactionRecognized
+          // The actual form submission (onSubmit) in TransactionForm.tsx is triggered by the user clicking the "Adicionar Transação" button
+          // OR if you want to auto-submit from voice, this is where it would happen.
+          // The current structure in VoiceCommandTransaction.tsx calls onTransactionRecognized,
+          // then the form is populated. The user then typically clicks "submit" on the main form.
+          // If you want voice to *also* submit, you would call your form's submit logic here.
+          // However, the provided VoiceCommandTransaction now calls onSubmitTransaction directly in processVoiceCommand.
+
+          // The new processVoiceCommand in VoiceCommandTransaction now directly calls onTransactionRecognized
+          // and expects the parent component (TransactionForm) to handle the submission via its own mechanisms
+          // (e.g., user clicks submit button after form is populated by voice).
+          // The prop onSubmitTransaction in VoiceCommandTransaction is no longer strictly necessary
+          // if the flow is: Voice -> Populates Form -> User Clicks Submit.
+          // However, if VoiceCommandTransaction's processVoiceCommand should also *trigger* the submission,
+          // then the logic passed here needs to correctly call the form's submission.
+
+          // Let's re-evaluate: The original VoiceCommandTransaction's processVoiceCommand had:
+          // onTransactionRecognized(transactionInfo);
+          // await onSubmitTransaction(transactionInfo);
+          // This means it *did* try to submit.
+
+          // So, the `onSubmitTransaction` prop should indeed contain the logic to submit.
+          // The Zod parsing needs to happen with the data from Gemini.
+
           const rawDataForZod = {
-            year: transactionDataFromVoice.year || String(new Date().getFullYear()),
-            month: transactionDataFromVoice.month || months[new Date().getMonth()],
-            type: transactionDataFromVoice.type,
-            category: transactionDataFromVoice.category, // `extractTransactionInfo` já garante uma categoria
-            amount: transactionDataFromVoice.amount, // `amount` já é um número vindo de `extractTransactionInfo`
-            isRecurring: transactionDataFromVoice.isRecurring,
-            recurringMonths: transactionDataFromVoice.recurringMonths, // String, o schema Zod e onSubmit lidam com "" -> "1"
-            dueDay: transactionDataFromVoice.dueDay, // String (pode ser "" ou "DD"), o schema Zod transformará "" para null
+              year: transactionDataFromVoice.year,
+              month: transactionDataFromVoice.month,
+              type: transactionDataFromVoice.type,
+              category: transactionDataFromVoice.category,
+              amount: transactionDataFromVoice.amount, // amount is already number
+              isRecurring: transactionDataFromVoice.isRecurring,
+              recurringMonths: transactionDataFromVoice.recurringMonths, // string
+              dueDay: transactionDataFromVoice.dueDay, // string, Zod handles "" -> null
           };
 
           try {
-            // Parse e valida os dados usando o schema Zod
-            // Isso aplicará as transformações, incluindo dueDay: "" -> null
-            const validatedData = formSchema.parse(rawDataForZod);
-            await onSubmit(validatedData); // Chama onSubmit com os dados validados e transformados
-          } catch (zodError) {
-            console.error("Zod validation error for voice command data:", zodError);
-            toast({
-              title: "Erro ao processar comando de voz",
-              description: "Os dados do comando de voz não puderam ser validados. Por favor, verifique o comando e tente novamente.",
-              variant: "destructive",
-            });
+              const validatedData = formSchema.parse(rawDataForZod); // formSchema is in TransactionForm
+              await onSubmit(validatedData); // onSubmit is the main submission function in TransactionForm
+          } catch (zodError: any) {
+              console.error("Zod validation error for voice command data (Gemini):", zodError);
+              // Display Zod errors to the user via toast
+              let errorMessages = "Erro de validação: ";
+              if (zodError.errors && zodError.errors.length > 0) {
+                  errorMessages += zodError.errors.map((err: any) => `${err.path.join('.')}: ${err.message}`).join(', ');
+              } else {
+                  errorMessages += "Verifique os dados do comando de voz.";
+              }
+              toast({
+                title: "Erro ao Validar Dados do Comando de Voz",
+                description: errorMessages,
+                variant: "destructive",
+              });
           }
         }}
       />
+
       
       <div className="mt-6 border-t pt-6">
         <h3 className="text-lg font-medium mb-4">Formulário Manual</h3>
