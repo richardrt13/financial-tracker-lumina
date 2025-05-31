@@ -37,16 +37,16 @@ export function Dashboard({ budgetId }: DashboardProps) {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDueSoonDialogOpen, setIsDueSoonDialogOpen] = useState(false);
   const [selectedType, setSelectedType] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null); // Ensure userId is managed
 
   useEffect(() => {
     const fetchUser = async () => {
       const { data } = await supabase.auth.getUser();
       setUserId(data.user?.id || null);
     };
-    
     fetchUser();
   }, []);
+
 
   const {
     isLoading,
@@ -54,21 +54,23 @@ export function Dashboard({ budgetId }: DashboardProps) {
     completionData,
     transactionsData,
     dueSoonData,
-    allTransactionsHistory,
+    allTransactionsHistory, // Make sure this is fetched and available for FinancialAssistantChat
     fetchData
   } = useTransactionData(userId, budgetId, selectedYear, selectedMonth);
 
   const {
     isProcessing,
-    selectedTransaction,
+    selectedTransaction, // This holds the full transaction object
     editFormData,
     setEditFormData,
     handleEditClick,
     handleDeleteClick,
     toggleTransactionStatus,
     handleEditTransaction,
-    handleDeleteTransaction
+    handleDeleteTransaction,
+    availableIncomesForEdit, // Get this from the hook
   } = useTransactionActions(userId, budgetId, fetchData);
+
 
   const handleCardClick = (type: string) => {
     if (type !== 'saldo') {
@@ -130,7 +132,8 @@ export function Dashboard({ budgetId }: DashboardProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+      {/* ... FilterControls and DueSoonAlert ... */}
+       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <FilterControls 
           selectedYear={selectedYear}
           selectedMonth={selectedMonth}
@@ -144,7 +147,8 @@ export function Dashboard({ budgetId }: DashboardProps) {
         />
       </div>
 
-      {isLoading ? (
+
+      {isLoading && !isProcessing ? ( // Adjust loading condition if needed
         <div className="flex justify-center items-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
         </div>
@@ -176,8 +180,11 @@ export function Dashboard({ budgetId }: DashboardProps) {
         onFormChange={setEditFormData}
         onSave={saveEditTransaction}
         isProcessing={isProcessing}
+        availableIncomes={availableIncomesForEdit} // Pass available incomes
+        transactionType={selectedTransaction?.type} // Pass the type of the transaction being edited
       />
 
+      {/* ... other dialogs ... */}
       <DeleteTransactionDialog
         isOpen={isDeleteDialogOpen}
         onOpenChange={setIsDeleteDialogOpen}
@@ -195,6 +202,7 @@ export function Dashboard({ budgetId }: DashboardProps) {
         isProcessing={isProcessing}
       />
 
+
       <Card className="mt-8">
         <CardHeader>
           <CardTitle>Assistente Financeiro</CardTitle>
@@ -209,7 +217,7 @@ export function Dashboard({ budgetId }: DashboardProps) {
             completionData={completionData}
             selectedYear={selectedYear}
             selectedMonth={selectedMonth}
-            allTransactionsHistory={allTransactionsHistory}
+            allTransactionsHistory={allTransactionsHistory || []} // Ensure it's an array
           />
         </CardContent>
       </Card>
