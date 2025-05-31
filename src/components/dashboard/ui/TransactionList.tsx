@@ -1,7 +1,7 @@
 // /components/dashboard/ui/TransactionList.tsx
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
-import { Calendar, MoreVertical, Edit, Trash2, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Calendar, MoreVertical, Edit, Trash2, Link2, ArrowUpDown, ArrowUp, ArrowDown, Coins } from "lucide-react"; // Added Link2, Coins
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -9,10 +9,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Transaction } from '../types';
-import { formatDateTime, formatDate } from '../utils/formatters';
+import { formatDateTime, formatDate, formatCurrency } from '../utils/formatters';
 import { getDaysToVencimento, getVencimentoStatus } from '../utils/helpers';
 import { useState, useEffect } from 'react';
+
 
 interface TransactionListProps {
   transactions: Transaction[];
@@ -23,8 +25,9 @@ interface TransactionListProps {
   highlightDueDate?: boolean;
 }
 
-type SortField = 'created_at' | 'description' | 'amount';
+type SortField = 'created_at' | 'description' | 'amount' | 'due_day';
 type SortDirection = 'asc' | 'desc';
+
 
 export function TransactionList({
   transactions,
@@ -38,158 +41,174 @@ export function TransactionList({
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [sortedTransactions, setSortedTransactions] = useState<Transaction[]>(transactions);
 
-  // Re-sort transactions when the original transactions prop changes or sort settings change
   useEffect(() => {
     const sorted = [...transactions].sort((a, b) => {
-      if (sortField === 'created_at') {
-        const dateA = new Date(a.created_at).getTime();
-        const dateB = new Date(b.created_at).getTime();
-        return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
-      } else if (sortField === 'description') {
-        const descA = (a.description || a.category || '').toLowerCase();
-        const descB = (b.description || b.category || '').toLowerCase();
-        return sortDirection === 'asc' 
-          ? descA.localeCompare(descB)
-          : descB.localeCompare(descA);
-      } else if (sortField === 'amount') {
-        return sortDirection === 'asc' ? a.amount - b.amount : b.amount - a.amount;
+      let comparison = 0;
+      switch (sortField) {
+        case 'created_at':
+          comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          break;
+        case 'description':
+          comparison = (a.description || a.category || '').localeCompare(b.description || b.category || '');
+          break;
+        case 'amount':
+          comparison = a.amount - b.amount;
+          break;
+        case 'due_day':
+          const dueDayA = a.due_day ?? (sortDirection === 'asc' ? Infinity : -Infinity);
+          const dueDayB = b.due_day ?? (sortDirection === 'asc' ? Infinity : -Infinity);
+          comparison = dueDayA - dueDayB;
+          break;
+        default:
+          return 0;
       }
-      return 0;
+      return sortDirection === 'asc' ? comparison : -comparison;
     });
-    
     setSortedTransactions(sorted);
   }, [transactions, sortField, sortDirection]);
 
+
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
-      // Toggle direction if clicking the same field
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
-      // Set new field and default to ascending
       setSortField(field);
       setSortDirection('asc');
     }
   };
 
   const renderSortIcon = (field: SortField) => {
-    if (sortField !== field) {
-      return <ArrowUpDown className="ml-1 h-4 w-4 text-gray-400" />;
-    }
-    return sortDirection === 'asc' 
-      ? <ArrowUp className="ml-1 h-4 w-4 text-blue-500" />
-      : <ArrowDown className="ml-1 h-4 w-4 text-blue-500" />;
+    if (sortField !== field) return <ArrowUpDown className="ml-1 h-3 w-3 text-gray-400" />;
+    return sortDirection === 'asc' ? <ArrowUp className="ml-1 h-3 w-3 text-blue-500" /> : <ArrowDown className="ml-1 h-3 w-3 text-blue-500" />;
   };
 
+
   return (
-    <>
-      <div className="bg-white p-2 mb-4 rounded-lg border border-gray-200 flex justify-between">
-        <div className="flex space-x-4">
-          <button 
-            onClick={() => toggleSort('created_at')}
-            className="flex items-center text-sm font-medium hover:text-blue-600"
-          >
-            Data {renderSortIcon('created_at')}
-          </button>
-          <button 
-            onClick={() => toggleSort('description')}
-            className="flex items-center text-sm font-medium hover:text-blue-600"
-          >
-            Nome {renderSortIcon('description')}
-          </button>
-          <button 
-            onClick={() => toggleSort('amount')}
-            className="flex items-center text-sm font-medium hover:text-blue-600"
-          >
-            Valor {renderSortIcon('amount')}
-          </button>
-        </div>
+    <TooltipProvider>
+      <div className="bg-gray-50 p-2 mb-2 rounded-md border border-gray-200 flex justify-start items-center space-x-3 text-xs sticky top-0 z-10">
+        <button onClick={() => toggleSort('created_at')} className="flex items-center font-medium text-gray-600 hover:text-blue-600">
+          Data {renderSortIcon('created_at')}
+        </button>
+        <button onClick={() => toggleSort('description')} className="flex items-center font-medium text-gray-600 hover:text-blue-600">
+          Nome {renderSortIcon('description')}
+        </button>
+         <button onClick={() => toggleSort('due_day')} className="flex items-center font-medium text-gray-600 hover:text-blue-600">
+          Venc. {renderSortIcon('due_day')}
+        </button>
+        <button onClick={() => toggleSort('amount')} className="flex items-center font-medium text-gray-600 hover:text-blue-600">
+          Valor {renderSortIcon('amount')}
+        </button>
       </div>
 
       {sortedTransactions.map((transaction) => (
         <div 
           key={transaction.id} 
-          className={`p-4 rounded-lg border ${transaction.is_completed 
-            ? 'border-green-200 bg-green-50' 
-            : highlightDueDate 
-              ? 'border-amber-200 bg-amber-50' 
-              : 'border-gray-200 bg-gray-50'} hover:bg-opacity-90`}
+          className={`p-3 mb-2 rounded-md border ${transaction.is_completed 
+            ? 'border-green-200 bg-green-50/70' 
+            : highlightDueDate && transaction.due_day && getVencimentoStatus(transaction.due_day) !== 'normal'
+              ? (getVencimentoStatus(transaction.due_day) === 'atrasado' ? 'border-red-300 bg-red-50/70' : 'border-amber-300 bg-amber-50/70')
+              : 'border-gray-200 bg-white'} hover:shadow-sm transition-shadow`}
         >
-          <div className="flex justify-between items-center">
-            <div className="flex-1">
+          <div className="flex justify-between items-start">
+            <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <Checkbox
                   checked={transaction.is_completed}
                   onCheckedChange={() => !isProcessing && onToggleStatus(transaction)}
                   id={`transaction-${transaction.id}`}
                   disabled={isProcessing}
+                  className="mt-0.5"
                 />
-                <h3 className={`font-medium ${transaction.is_completed ? 'line-through text-gray-500' : ''}`}>
-                  {transaction.description || transaction.category}
-                </h3>
-                
-                {transaction.due_day && !transaction.is_completed && (
-                  <>
-                    {getVencimentoStatus(transaction.due_day) === "atrasado" && (
-                      <Badge variant="destructive" className="ml-2">Atrasado</Badge>
+                <div>
+                  <h3 className={`font-medium text-sm ${transaction.is_completed ? 'line-through text-gray-500' : 'text-gray-800'}`}>
+                    {transaction.description || transaction.category}
+                  </h3>
+                  <p className="text-xs text-gray-500">{transaction.category}</p>
+                </div>
+              </div>
+              
+              <div className="text-xs text-gray-500 mt-1 space-y-0.5">
+                {transaction.due_day && (
+                  <div className="flex items-center">
+                    <Calendar className="h-3 w-3 mr-1" />
+                    Vencimento: dia {transaction.due_day}
+                    {!transaction.is_completed && getVencimentoStatus(transaction.due_day) === "atrasado" && (
+                      <Badge variant="destructive" className="ml-2 px-1.5 py-0 text-[10px]">Atrasado</Badge>
                     )}
-                    {getVencimentoStatus(transaction.due_day) === "hoje" && (
-                      <Badge variant="default" className="bg-amber-500 hover:bg-amber-600 ml-2">Vence hoje</Badge>
+                    {!transaction.is_completed && getVencimentoStatus(transaction.due_day) === "hoje" && (
+                      <Badge variant="default" className="bg-amber-500 hover:bg-amber-600 ml-2 px-1.5 py-0 text-[10px]">Vence hoje</Badge>
                     )}
-                    {getVencimentoStatus(transaction.due_day) === "proximo" && (
-                      <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50 ml-2">
+                    {!transaction.is_completed && getVencimentoStatus(transaction.due_day) === "proximo" && (
+                      <Badge variant="outline" className="text-amber-700 border-amber-400 bg-amber-100 ml-2 px-1.5 py-0 text-[10px]">
                         Vence em {getDaysToVencimento(transaction.due_day)} dias
                       </Badge>
                     )}
-                  </>
+                  </div>
+                )}
+                <p>Criado em: {formatDateTime(transaction.created_at)}</p>
+                 {(transaction.type === 'despesa' || transaction.type === 'investimento') && transaction.linked_income_details && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <p className="text-xs text-blue-600 hover:text-blue-800 cursor-default flex items-center">
+                        <Link2 className="h-3 w-3 mr-1" />
+                        Vinculada a: {transaction.linked_income_details.category}
+                      </p>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      <p>{transaction.linked_income_details.description || transaction.linked_income_details.category}</p>
+                      <p>Valor: R$ {formatCurrency(transaction.linked_income_details.amount)}</p>
+                    </TooltipContent>
+                  </Tooltip>
                 )}
               </div>
-              <p className="text-sm text-gray-500 mt-1">{transaction.category}</p>
-              {transaction.due_day && (
-                <p className="text-xs text-gray-500 mt-1 flex items-center">
-                  <Calendar className="h-3 w-3 mr-1" />
-                  Vencimento: dia {transaction.due_day}
-                </p>
-              )}
-              <p className="text-xs text-gray-500 mt-1">
-                Criado em: {formatDateTime(transaction.created_at)}
-              </p>
             </div>
-            <div className="text-right mr-4">
-              <p className="font-semibold">
-                R$ {transaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            
+            <div className="text-right ml-2 min-w-[100px]"> {/* Added min-w for better layout */}
+              <p className={`font-semibold text-sm ${transaction.is_completed ? 'text-gray-500' : 
+                transaction.type === 'receita' ? 'text-green-600' : 
+                transaction.type === 'despesa' ? 'text-red-600' : 'text-blue-600'}`}>
+                {transaction.type === 'despesa' || transaction.type === 'investimento' ? '-' : '+'} R$ {formatCurrency(transaction.amount)}
               </p>
+              {transaction.type === 'receita' && transaction.remaining_after_links !== undefined && !transaction.is_completed && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="text-xs text-gray-500 mt-0.5 flex items-center justify-end cursor-default">
+                      <Coins className="h-3 w-3 mr-1 text-yellow-500" />
+                      <span>Sobra: R$ {formatCurrency(transaction.remaining_after_links)}</span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    Valor restante desta receita após despesas/investimentos vinculados.
+                  </TooltipContent>
+                </Tooltip>
+              )}
               {transaction.is_completed && transaction.completed_at && (
-                <p className="text-sm text-gray-500">
-                  Concluída em: {formatDate(transaction.completed_at)}
+                <p className="text-xs text-gray-500">
+                  Concluída: {formatDate(transaction.completed_at)}
                 </p>
               )}
-              <p className="text-xs text-gray-500">
-                {transaction.is_completed ? 'Concluída' : 'Pendente'}
-              </p>
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" disabled={isProcessing}>
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => onEditClick(transaction)}>
-                  <Edit className="h-4 w-4 mr-2" />
-                  Editar
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => onDeleteClick(transaction)}
-                  className="text-red-600 focus:text-red-600"
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Excluir
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            
+            <div className="ml-1">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" disabled={isProcessing}>
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => onEditClick(transaction)} disabled={isProcessing}>
+                    <Edit className="h-4 w-4 mr-2" /> Editar
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onDeleteClick(transaction)} disabled={isProcessing} className="text-red-600 focus:text-red-600">
+                    <Trash2 className="h-4 w-4 mr-2" /> Excluir
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </div>
       ))}
-    </>
+    </TooltipProvider>
   );
 }

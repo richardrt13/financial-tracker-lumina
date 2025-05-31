@@ -1,4 +1,5 @@
-// /components/dashboard/types.ts (complemento)
+// /components/dashboard/types.ts
+
 export type Transaction = {
   id: number;
   year: string;
@@ -13,6 +14,13 @@ export type Transaction = {
   completed_at?: string;
   due_day?: number;
   budget_id: string;
+  linked_income_id?: string | null;
+  linked_income_details?: {
+    description?: string;
+    category: string;
+    amount: number;
+  };
+  remaining_after_links?: number; // Adicionado: Saldo restante da receita após débitos vinculados
 };
 
 export type TransactionsData = {
@@ -58,4 +66,5 @@ export type EditFormData = {
   category: string;
   amount: string;
   due_day: string;
+  linked_income_id?: string | null;
 };
