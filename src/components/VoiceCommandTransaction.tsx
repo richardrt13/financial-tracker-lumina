@@ -427,31 +427,61 @@ export function VoiceCommandTransaction({
             description: "Fale seu comando de voz agora.",
         });
     };
-    
+    // Dentro do useEffect de inicialização:
     recognitionRef.current.onaudiostart = () => {
-        // console.log("VoiceCommandTransaction: onaudiostart - Captura de áudio iniciada.");
+        console.log("VoiceCommandTransaction: onaudiostart - Captura de áudio iniciada pela API.");
     };
-
+    
+    recognitionRef.current.onsoundstart = () => { // Algumas implementações usam onsoundstart
+        console.log("VoiceCommandTransaction: onsoundstart - Som detectado pela API.");
+    };
+    
     recognitionRef.current.onspeechstart = () => {
-        // console.log("VoiceCommandTransaction: onspeechstart - Detecção de fala iniciada.");
+        console.log("VoiceCommandTransaction: onspeechstart - Detecção de fala iniciada pela API.");
     };
     
     recognitionRef.current.onspeechend = () => {
-        // console.log("VoiceCommandTransaction: onspeechend - Detecção de fala finalizada.");
-        // O reconhecimento continua até onend ou onresult com isFinal=true
+        console.log("VoiceCommandTransaction: onspeechend - Detecção de fala finalizada pela API.");
     };
-
+    
+    recognitionRef.current.onsoundend = () => { // Algumas implementações usam onsoundend
+        console.log("VoiceCommandTransaction: onsoundend - Fim do som detectado pela API.");
+    };
+    
     recognitionRef.current.onresult = (event: any) => {
-      // console.log("VoiceCommandTransaction: onresult - Resultado recebido.", event);
+      // Mantenha os logs detalhados aqui como na versão anterior
+      console.log("VoiceCommandTransaction: onresult - Evento recebido:", JSON.stringify(event.results));
       let finalTranscript = "";
       let interimTranscript = "";
       for (let i = event.resultIndex; i < event.results.length; ++i) {
+        console.log(`VoiceCommandTransaction: onresult - Resultado [<span class="math-inline">\{i\}\]\: isFinal\=</span>{event.results[i].isFinal}, transcript=<span class="math-inline">\{event\.results\[i\]\[0\]\.transcript\}, confidence\=</span>{event.results[i][0].confidence}`);
         if (event.results[i].isFinal) {
           finalTranscript += event.results[i][0].transcript;
         } else {
           interimTranscript += event.results[i][0].transcript;
         }
       }
+      console.log("VoiceCommandTransaction: onresult - Transcrições - Final:", finalTranscript, "Provisória:", interimTranscript);
+      setTranscript(finalTranscript || interimTranscript);
+    };
+    
+    recognitionRef.current.onerror = (event: any) => {
+      // Mantenha os logs detalhados aqui
+      console.error('VoiceCommandTransaction: onerror - Erro no reconhecimento:', event.error, event.message ? `Mensagem: ${event.message}` : '');
+      // ... resto do tratamento de erro ...
+       setIsListening(false); 
+       cleanupResources(); 
+    };
+    
+    recognitionRef.current.onend = () => {
+        console.log("VoiceCommandTransaction: onend - API de reconhecimento finalizada. Estado de isListening:", isListening, "Transcript:", transcript); // Adicionado estado atual
+         // O estado de isListening será false aqui se onstart não for chamado ou se onerror/onend já o definiram.
+         // Se onstart definiu isListening para true e não houve erro, este onend irá naturalmente redefinir
+        setIsListening(false); 
+        if (!transcript.trim() && !isProcessing) { 
+           cleanupResources();
+        }
+        // Se houver transcript, o useEffect [isListening, transcript, isProcessing] cuidará do processamento.
       // console.log("VoiceCommandTransaction: onresult - Final:", finalTranscript, "Interim:", interimTranscript);
       setTranscript(finalTranscript || interimTranscript); // Atualiza o estado para visualização e para o useEffect que processa
     };
