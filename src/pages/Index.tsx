@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Plus, Trash2, GripVertical, AlertCircle } from "lucide-react";
+import { Plus, Trash2, GripVertical, AlertCircle, Settings } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +32,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/components/ui/use-toast";
+import { Label } from "@/components/ui/label";
+import { ProcessBankStatement } from "@/components/ProcessBankStatement"; 
 
 type Budget = {
   id: string;
@@ -51,6 +53,7 @@ const Index = () => {
   const [newBudgetName, setNewBudgetName] = useState("");
   const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isActionLoading, setIsActionLoading] = useState(false);
   const [draggedItem, setDraggedItem] = useState<Budget | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [draggedOverItem, setDraggedOverItem] = useState<string | null>(null);
@@ -526,6 +529,8 @@ const Index = () => {
     );
   }
 
+  
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
@@ -536,15 +541,17 @@ const Index = () => {
           <div className="bg-white p-4 rounded-lg shadow-md">
             <div className="flex items-end gap-2">
               <div className="flex-1">
-                <label className="block text-sm font-medium mb-1">
-                  Orçamento
-                </label>
+                {/* Alterado de <label> para <Label> para consistência, assumindo importação de ui/label */}
+                <Label htmlFor="budget-select" className="block text-sm font-medium mb-1">
+                  Orçamento Ativo
+                </Label>
                 <Select 
                   value={selectedBudgetId || ''} 
-                  onValueChange={setSelectedBudgetId}
+                  onValueChange={(value) => setSelectedBudgetId(value === '' ? null : value)}
+                  disabled={budgets.length === 0 && !isLoading} // Desabilitar se não houver orçamentos e não estiver carregando
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione um orçamento" />
+                  <SelectTrigger id="budget-select" disabled={isLoading && budgets.length === 0}>
+                    <SelectValue placeholder={isLoading && budgets.length === 0 ? "Carregando orçamentos..." : (budgets.length === 0 ? "Crie um orçamento para começar" : "Selecione um orçamento")} />
                   </SelectTrigger>
                   <SelectContent>
                     {budgets.map((budget) => (
@@ -559,7 +566,7 @@ const Index = () => {
                 variant="outline"
                 size="icon"
                 onClick={() => setIsNewBudgetDialogOpen(true)}
-                title="Adicionar orçamento"
+                title="Adicionar novo orçamento"
               >
                 <Plus className="h-4 w-4" />
               </Button>
@@ -568,26 +575,48 @@ const Index = () => {
                 size="icon"
                 onClick={() => setIsManageBudgetsDialogOpen(true)}
                 title="Gerenciar orçamentos"
+                disabled={budgets.length === 0 || isLoading} // Desabilitar se não houver orçamentos ou estiver carregando
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-settings">
-                  <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
+                <Settings className="h-4 w-4" />
               </Button>
             </div>
           </div>
           
-          <div className="grid grid-cols-1 lg:grid-cols-[400px,1fr] gap-8">
+          {/* NOVA SEÇÃO PARA IMPORTAR EXTRATO BANCÁRIO */}
+          {selectedBudgetId && !isLoading && ( // Mostrar apenas se um orçamento estiver selecionado e não estiver carregando orçamentos
             <div className="bg-white p-6 rounded-lg shadow-md">
+               <ProcessBankStatement budgetId={selectedBudgetId} />
+            </div>
+          )}
+          
+          {/* Layout principal: Formulário de Transação e Dashboard */}
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr] gap-8 items-start">
+            {/* Coluna do Formulário de Transação (sticky) */}
+            <div className="bg-white p-6 rounded-lg shadow-md lg:sticky lg:top-4">
               <h2 className="text-xl font-semibold mb-4">Nova Transação</h2>
-              {selectedBudgetId && (
+              {isLoading && !selectedBudgetId ? ( // Se estiver carregando e nenhum orçamento selecionado
+                <div className="flex items-center text-gray-500">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Carregando orçamentos...
+                </div>
+              ) : !selectedBudgetId ? ( // Se não estiver carregando e nenhum orçamento selecionado
+                <p className="text-gray-500">Selecione ou crie um orçamento para adicionar transações.</p>
+              ) : ( // Se houver um orçamento selecionado (e não estiver carregando orçamentos)
                 <TransactionForm budgetId={selectedBudgetId} />
               )}
             </div>
             
+            {/* Coluna do Dashboard */}
             <div className="bg-white p-6 rounded-lg shadow-md">
-              <h2 className="text-xl font-semibold mb-4">Dashboard</h2>
-              {selectedBudgetId && (
+              <h2 className="text-xl font-semibold mb-4">Visão Geral do Orçamento</h2>
+               {isLoading && !selectedBudgetId ? (
+                <div className="flex items-center text-gray-500">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Carregando dados do orçamento...
+                </div>
+              ) : !selectedBudgetId ? (
+                 <p className="text-gray-500">Selecione ou crie um orçamento para visualizar o dashboard.</p>
+              ) : (
                 <Dashboard budgetId={selectedBudgetId} />
               )}
             </div>
@@ -603,7 +632,7 @@ const Index = () => {
           </DialogHeader>
           <div className="py-4">
             <Input
-              placeholder="Nome do orçamento"
+              placeholder="Nome do orçamento (ex: Pessoal, Viagem)"
               value={newBudgetName}
               onChange={(e) => setNewBudgetName(e.target.value)}
             />
@@ -612,61 +641,66 @@ const Index = () => {
             <Button variant="outline" onClick={() => setIsNewBudgetDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleAddBudget} disabled={isLoading}>
+            <Button onClick={handleAddBudget} disabled={isActionLoading || !newBudgetName.trim()}>
+              {isActionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
               Adicionar
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
       
-      {/* Modal para gerenciar orçamentos (drag-and-drop/excluir) */}
+      {/* Modal para gerenciar orçamentos */}
       <Dialog open={isManageBudgetsDialogOpen} onOpenChange={setIsManageBudgetsDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Gerenciar Orçamentos</DialogTitle>
             <DialogDescription>
-              Arraste para reorganizar ou clique no ícone da lixeira para excluir um orçamento.
+              Arraste para reorganizar ou clique no ícone da lixeira para excluir.
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            <ul 
-              className="space-y-2"
-              onDragOver={handleContainerDragOver}
-            >
-              {budgets.map((budget) => (
-                <li 
-                  key={budget.id}
-                  className={`flex items-center justify-between p-2 border rounded cursor-move budget-item
-                    ${draggedItem?.id === budget.id ? 'dragging' : ''}
-                    ${draggedOverItem === budget.id ? 'border-blue-500 bg-blue-50' : ''}`}
-                  draggable="true"
-                  onDragStart={(e) => handleDragStart(e, budget)}
-                  onDragOver={(e) => handleDragOver(e, budget.id)}
-                  onDragEnter={(e) => handleDragEnter(e, budget.id)}
-                  onDragLeave={handleDragLeave}
-                  onDragEnd={handleDragEnd}
-                  onDrop={(e) => handleDrop(e, budget.id)}
+            {budgets.length === 0 && !isLoading ? (
+                <p className="text-sm text-gray-500 text-center">Nenhum orçamento encontrado. Crie um novo.</p>
+            ) : (
+                <ul 
+                className="space-y-2"
+                onDragOver={handleContainerDragOver}
                 >
-                  <div className="flex items-center gap-2">
-                    <GripVertical className="h-4 w-4 text-gray-400" />
-                    <span className="font-medium">{budget.name}</span>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    disabled={budgets.length <= 1 || isLoading}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      confirmDeleteBudget(budget);
-                    }}
-                    title="Excluir orçamento"
-                    className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </li>
-              ))}
-            </ul>
+                {budgets.map((budget) => (
+                    <li 
+                    key={budget.id}
+                    className={`flex items-center justify-between p-2 border rounded cursor-move budget-item
+                        ${draggedItem?.id === budget.id ? 'dragging' : ''}
+                        ${draggedOverItem === budget.id ? 'border-blue-500 bg-blue-50' : ''}`}
+                    draggable="true"
+                    onDragStart={(e) => handleDragStart(e, budget)}
+                    onDragOver={(e) => handleDragOver(e, budget.id)}
+                    onDragEnter={(e) => handleDragEnter(e, budget.id)}
+                    onDragLeave={handleDragLeave}
+                    onDragEnd={handleDragEnd}
+                    onDrop={(e) => handleDrop(e, budget.id)}
+                    >
+                    <div className="flex items-center gap-2">
+                        <GripVertical className="h-4 w-4 text-gray-400" />
+                        <span className="font-medium">{budget.name}</span>
+                    </div>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        disabled={budgets.length <= 1 || isActionLoading}
+                        onClick={(e) => {
+                        e.stopPropagation(); // Evitar que o drag comece ao clicar no botão
+                        confirmDeleteBudget(budget);
+                        }}
+                        title="Excluir orçamento"
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                    >
+                        <Trash2 className="h-4 w-4" />
+                    </Button>
+                    </li>
+                ))}
+                </ul>
+            )}
             {budgets.length > 1 && (
               <p className="mt-4 text-sm text-gray-500">
                 Dica: Arraste e solte os itens para reordenar.
@@ -697,16 +731,17 @@ const Index = () => {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isLoading}>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel disabled={isActionLoading}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               onClick={(e) => {
                 e.preventDefault();
                 deleteBudget();
               }}
-              disabled={isLoading}
+              disabled={isActionLoading}
               className="bg-red-500 hover:bg-red-600"
             >
-              {isLoading ? "Excluindo..." : "Sim, excluir"}
+              {isActionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
+              Sim, excluir
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
