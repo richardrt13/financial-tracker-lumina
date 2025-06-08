@@ -1,16 +1,34 @@
-const { createClient } = require('@supabase/supabase-js');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { createClient } from '@supabase/supabase-js';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
+// A constante 'months' é definida localmente para evitar erros de importação.
 const months = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
-const geminiApiKey = process.env.VITE_GEMINI_API_KEY;
-const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN;
+// Interfaces para a estrutura de dados do Telegram
+interface TelegramMessage {
+  message_id: number;
+  from: { id: number; is_bot: boolean; first_name: string; username: string; };
+  chat: { id: number; first_name: string; username: string; type: 'private'; };
+  date: number;
+  text?: string;
+}
 
+interface TelegramPayload {
+  update_id: number;
+  message?: TelegramMessage;
+}
+
+// Inicializar clientes com variáveis de ambiente
+const supabaseUrl = process.env.VITE_SUPABASE_URL!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY!;
+const geminiApiKey = process.env.VITE_GEMINI_API_KEY!;
+const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN!;
+
+// Validar se todas as variáveis de ambiente estão presentes
 if (!supabaseUrl || !supabaseServiceKey || !geminiApiKey || !telegramBotToken) {
     console.error("ERRO CRÍTICO: Variáveis de ambiente faltando. Verifique a configuração na Vercel.");
 }
@@ -18,7 +36,8 @@ if (!supabaseUrl || !supabaseServiceKey || !geminiApiKey || !telegramBotToken) {
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const genai = new GoogleGenerativeAI(geminiApiKey);
 
-async function sendTelegramMessage(chat_id, text) {
+// Função para enviar uma mensagem de volta para o Telegram
+async function sendTelegramMessage(chat_id: number, text: string) {
   const url = `https://api.telegram.org/bot${telegramBotToken}/sendMessage`;
   try {
     const response = await fetch(url, {
@@ -35,7 +54,8 @@ async function sendTelegramMessage(chat_id, text) {
   }
 }
 
-async function extractTransaction(text) {
+// Função para extrair dados da transação usando Gemini
+async function extractTransaction(text: string): Promise<any> {
   const model = genai.getGenerativeModel({ model: 'gemini-1.5-flash' });
   const currentYear = new Date().getFullYear();
   const currentMonthName = months[new Date().getMonth()];
@@ -65,7 +85,9 @@ async function extractTransaction(text) {
   }
 }
 
-export default async function handler(request, response) {
+// O handler principal da Vercel Function
+const handler = async (request: VercelRequest, response: VercelResponse) => {
+  // Verificação de segurança
   const secret = request.headers['x-telegram-bot-api-secret-token'];
   if (secret !== process.env.TELEGRAM_WEBHOOK_SECRET) {
     return response.status(401).send('Unauthorized');
@@ -75,7 +97,7 @@ export default async function handler(request, response) {
     return response.status(405).send('Method Not Allowed');
   }
 
-  const payload = request.body;
+  const payload: TelegramPayload = request.body;
   const message = payload.message;
 
   if (!message || !message.text) {
@@ -131,9 +153,11 @@ export default async function handler(request, response) {
     await sendTelegramMessage(chat.id, confirmationText);
 
     return response.status(200).send('Success');
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro no webhook do Telegram:', error);
     await sendTelegramMessage(chat.id, `Ocorreu um erro ao processar sua solicitação. A equipe de suporte foi notificada.`);
     return response.status(200).send('Error processed');
   }
-}
+};
+
+export default handler;
