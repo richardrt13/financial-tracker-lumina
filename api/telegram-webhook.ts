@@ -1,32 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { months } from '../src/components/constants'; // Reutilizando constantes do frontend
+import { months } from '../src/components/constants';
 
 // Interfaces para a estrutura de dados do Telegram
 interface TelegramMessage {
   message_id: number;
-  from: {
-    id: number;
-    is_bot: boolean;
-    first_name: string;
-    username: string;
-  };
-  chat: {
-    id: number;
-    first_name: string;
-    username: string;
-    type: 'private';
-  };
+  from: { id: number; is_bot: boolean; first_name: string; username: string; };
+  chat: { id: number; first_name: string; username: string; type: 'private'; };
   date: number;
   text?: string;
-  // Adicionar suporte para áudio no futuro
-  // voice?: {
-  //   file_id: string;
-  //   duration: number;
-  //   mime_type: string;
-  //   file_size: number;
-  // };
 }
 
 interface TelegramPayload {
@@ -40,17 +23,31 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY!;
 const geminiApiKey = process.env.VITE_GEMINI_API_KEY!;
 const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN!;
 
+// Validar se todas as variáveis de ambiente estão presentes
+if (!supabaseUrl || !supabaseServiceKey || !geminiApiKey || !telegramBotToken) {
+    console.error("Variáveis de ambiente faltando. Verifique a configuração na Vercel.");
+    // Não podemos prosseguir sem as variáveis
+}
+
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const genai = new GoogleGenerativeAI(geminiApiKey);
 
 // Função para enviar uma mensagem de volta para o Telegram
 async function sendTelegramMessage(chat_id: number, text: string) {
   const url = `https://api.telegram.org/bot${telegramBotToken}/sendMessage`;
-  await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id, text, parse_mode: 'Markdown' }),
-  });
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id, text, parse_mode: 'Markdown' }),
+    });
+    if (!response.ok) {
+        const errorData = await response.json();
+        console.error("Erro ao enviar mensagem para o Telegram:", errorData);
+    }
+  } catch (error) {
+      console.error("Falha de rede ao contatar a API do Telegram:", error);
+  }
 }
 
 // Função para extrair dados da transação usando Gemini
@@ -85,11 +82,11 @@ async function extractTransaction(text: string): Promise<any> {
 }
 
 // O handler principal da Vercel Function
-export default async function handler(
+const handler = async (
   request: VercelRequest,
   response: VercelResponse,
-) {
-  // Verificação de segurança simples
+) => {
+  // Verificação de segurança
   const secret = request.headers['x-telegram-bot-api-secret-token'];
   if (secret !== process.env.TELEGRAM_WEBHOOK_SECRET) {
     return response.status(401).send('Unauthorized');
@@ -103,25 +100,21 @@ export default async function handler(
   const message = payload.message;
 
   if (!message || !message.text) {
-    // Responde a webhooks que não contêm uma mensagem de texto
-    return response.status(200).send('OK');
+    return response.status(200).send('OK: No text message');
   }
 
   const { chat, text } = message;
 
-  // Lógica de "loading" enviando uma mensagem inicial
-  await sendTelegramMessage(chat.id, 'Processando seu pedido...');
-
   try {
     // 1. Encontrar o usuário do seu app com base no chat_id do Telegram
     const { data: userData, error: userError } = await supabase
-      .from('telegram_links') // Você precisará criar esta tabela
+      .from('telegram_links') 
       .select('user_id, default_budget_id')
       .eq('chat_id', chat.id)
       .single();
 
     if (userError || !userData) {
-      await sendTelegramMessage(chat.id, `Olá! Parece que sua conta do Telegram não está vinculada ao Spendly. Por favor, acesse o app e vincule sua conta na seção "Minha Conta".`);
+      await sendTelegramMessage(chat.id, `Olá! Sua conta do Telegram não está vinculada ao Spendly. Por favor, acesse o app, vá em "Minha Conta" e clique em "Vincular com Telegram".`);
       return response.status(200).send('User not linked');
     }
 
@@ -130,6 +123,9 @@ export default async function handler(
         await sendTelegramMessage(chat.id, `Você precisa definir um orçamento padrão no app para poder criar transações pelo Telegram.`);
         return response.status(200).send('Default budget not set');
     }
+
+    // Enviar mensagem de "Processando..." antes da chamada à IA
+    await sendTelegramMessage(chat.id, 'Processando seu pedido...');
 
     // 2. Extrair dados da transação com a IA
     const transactionData = await extractTransaction(text);
@@ -149,7 +145,7 @@ export default async function handler(
       category: transactionData.category,
       amount: transactionData.amount,
       description: transactionData.description,
-      is_completed: false, // Transações via bot começam como não pagas
+      is_completed: false, 
     });
 
     if (insertError) {
@@ -163,7 +159,12 @@ export default async function handler(
     return response.status(200).send('Success');
   } catch (error: any) {
     console.error('Erro no webhook do Telegram:', error);
-    await sendTelegramMessage(chat.id, `Ocorreu um erro ao processar sua solicitação: ${error.message}`);
-    return response.status(500).send('Internal Server Error');
+    // Envia uma mensagem de erro genérica para o usuário
+    await sendTelegramMessage(chat.id, `Ocorreu um erro ao processar sua solicitação. A equipe de suporte foi notificada.`);
+    // Retorna status 200 para o Telegram para evitar que ele tente reenviar a mensagem
+    return response.status(200).send('Error processed');
   }
-}
+};
+
+// CORREÇÃO AQUI: Exportar usando module.exports
+module.exports = handler;
