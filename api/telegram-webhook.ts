@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// A constante 'months' é definida localmente para evitar erros de importação.
+// A constante 'months' é definida localmente para evitar erros de importação no ambiente serverless.
 const months = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
@@ -28,7 +28,6 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY!;
 const geminiApiKey = process.env.VITE_GEMINI_API_KEY!;
 const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN!;
 
-// Validar se todas as variáveis de ambiente estão presentes
 if (!supabaseUrl || !supabaseServiceKey || !geminiApiKey || !telegramBotToken) {
     console.error("ERRO CRÍTICO: Variáveis de ambiente faltando. Verifique a configuração na Vercel.");
 }
@@ -36,7 +35,6 @@ if (!supabaseUrl || !supabaseServiceKey || !geminiApiKey || !telegramBotToken) {
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const genai = new GoogleGenerativeAI(geminiApiKey);
 
-// Função para enviar uma mensagem de volta para o Telegram
 async function sendTelegramMessage(chat_id: number, text: string) {
   const url = `https://api.telegram.org/bot${telegramBotToken}/sendMessage`;
   try {
@@ -54,7 +52,6 @@ async function sendTelegramMessage(chat_id: number, text: string) {
   }
 }
 
-// Função para extrair dados da transação usando Gemini
 async function extractTransaction(text: string): Promise<any> {
   const model = genai.getGenerativeModel({ model: 'gemini-1.5-flash' });
   const currentYear = new Date().getFullYear();
@@ -86,8 +83,10 @@ async function extractTransaction(text: string): Promise<any> {
 }
 
 // O handler principal da Vercel Function
-const handler = async (request: VercelRequest, response: VercelResponse) => {
-  // Verificação de segurança
+async function handler(
+  request: VercelRequest,
+  response: VercelResponse,
+) {
   const secret = request.headers['x-telegram-bot-api-secret-token'];
   if (secret !== process.env.TELEGRAM_WEBHOOK_SECRET) {
     return response.status(401).send('Unauthorized');
@@ -107,6 +106,37 @@ const handler = async (request: VercelRequest, response: VercelResponse) => {
   const { chat, text } = message;
 
   try {
+    // ---- INÍCIO DA LÓGICA CORRIGIDA ----
+
+    // Passo 1: Verificar se é o comando de vinculação /start
+    if (text.startsWith('/start')) {
+      const parts = text.split(' ');
+      if (parts.length > 1 && parts[1]) {
+        const userIdFromCommand = parts[1];
+        
+        // Salva (ou atualiza) a vinculação na tabela.
+        // `upsert` é ideal aqui: cria se não existe, atualiza se já existe.
+        const { error } = await supabase
+          .from('telegram_links')
+          .upsert(
+            { chat_id: chat.id, user_id: userIdFromCommand },
+            { onConflict: 'chat_id' } // Se já existir um link para este chat_id, ele será atualizado.
+          );
+
+        if (error) {
+          throw new Error(`Não foi possível salvar a vinculação: ${error.message}`);
+        }
+
+        await sendTelegramMessage(chat.id, '✅ Conta vinculada com sucesso! Agora você já pode me enviar suas transações por texto (ex: "gastei 50 no mercado").');
+        return response.status(200).send('Link successful');
+
+      } else {
+        await sendTelegramMessage(chat.id, 'Bem-vindo! Para vincular sua conta, por favor, acesse a seção "Minha Conta" no aplicativo Spendly.');
+        return response.status(200).send('Welcome message sent');
+      }
+    }
+
+    // Passo 2: Se não for o comando /start, continua com a lógica normal
     const { data: userData, error: userError } = await supabase
       .from('telegram_links') 
       .select('user_id, default_budget_id')
@@ -120,12 +150,11 @@ const handler = async (request: VercelRequest, response: VercelResponse) => {
 
     const { user_id, default_budget_id } = userData;
     if (!default_budget_id) {
-        await sendTelegramMessage(chat.id, `Você precisa definir um orçamento padrão no app para poder criar transações pelo Telegram.`);
+        await sendTelegramMessage(chat.id, `Você precisa definir um orçamento padrão no app (na tela "Minha Conta") para poder criar transações pelo Telegram.`);
         return response.status(200).send('Default budget not set');
     }
 
     await sendTelegramMessage(chat.id, 'Analisando seu comando...');
-
     const transactionData = await extractTransaction(text);
 
     if (!transactionData || !transactionData.amount || !transactionData.category || !transactionData.type) {
@@ -158,6 +187,6 @@ const handler = async (request: VercelRequest, response: VercelResponse) => {
     await sendTelegramMessage(chat.id, `Ocorreu um erro ao processar sua solicitação. A equipe de suporte foi notificada.`);
     return response.status(200).send('Error processed');
   }
-};
+}
 
 export default handler;
