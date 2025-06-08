@@ -1,20 +1,28 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, InlineDataPart } from '@google/generative-ai';
 
-// A constante 'months' é definida localmente para evitar erros de importação no ambiente serverless.
 const months = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
 
 // Interfaces para a estrutura de dados do Telegram
+interface TelegramVoice {
+  file_id: string;
+  file_unique_id: string;
+  duration: number;
+  mime_type: string; // Geralmente 'audio/ogg'
+  file_size?: number;
+}
+
 interface TelegramMessage {
   message_id: number;
   from: { id: number; is_bot: boolean; first_name: string; username: string; };
   chat: { id: number; first_name: string; username: string; type: 'private'; };
   date: number;
   text?: string;
+  voice?: TelegramVoice;
 }
 
 interface TelegramPayload {
@@ -22,13 +30,14 @@ interface TelegramPayload {
   message?: TelegramMessage;
 }
 
-// Inicializar clientes com variáveis de ambiente
+// Inicialização de Clientes
 const supabaseUrl = process.env.VITE_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY!;
 const geminiApiKey = process.env.VITE_GEMINI_API_KEY!;
 const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN!;
+const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET!;
 
-if (!supabaseUrl || !supabaseServiceKey || !geminiApiKey || !telegramBotToken) {
+if (!supabaseUrl || !supabaseServiceKey || !geminiApiKey || !telegramBotToken || !webhookSecret) {
     console.error("ERRO CRÍTICO: Variáveis de ambiente faltando. Verifique a configuração na Vercel.");
 }
 
@@ -53,34 +62,61 @@ async function sendTelegramMessage(chat_id: number, text: string) {
 }
 
 async function extractTransaction(text: string): Promise<any> {
-  const model = genai.getGenerativeModel({ model: 'gemini-1.5-flash' });
-  const currentYear = new Date().getFullYear();
-  const currentMonthName = months[new Date().getMonth()];
+    const model = genai.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const currentYear = new Date().getFullYear();
+    const currentMonthName = months[new Date().getMonth()];
 
-  const prompt = `
-    Analise o texto a seguir para extrair uma transação financeira: "${text}".
-    Retorne APENAS um objeto JSON com os campos: type, category, amount, description, month, year.
-    - 'type' deve ser 'receita', 'despesa' ou 'investimento'.
-    - 'category' deve ser uma categoria adequada.
-    - 'amount' deve ser um número.
-    - 'description' é a descrição completa.
-    - 'month' é o nome do mês em português (Ex: "Junho"). Se não especificado, use "${currentMonthName}".
-    - 'year' é o ano com 4 dígitos. Se não especificado, use "${currentYear}".
-    
-    Exemplo de saída:
-    { "type": "despesa", "category": "Alimentação", "amount": 55.40, "description": "Lanche no iFood", "month": "${currentMonthName}", "year": "${currentYear}" }
-  `;
+    const prompt = `
+        Analise o texto a seguir para extrair uma transação financeira: "${text}".
+        Retorne APENAS um objeto JSON com os campos: type, category, amount, description, month, year.
+        - 'type' deve ser 'receita', 'despesa' ou 'investimento'.
+        - 'category' deve ser uma categoria adequada.
+        - 'amount' deve ser um número.
+        - 'description' é a descrição completa.
+        - 'month' é o nome do mês em português (Ex: "Junho"). Se não especificado, use "${currentMonthName}".
+        - 'year' é o ano com 4 dígitos. Se não especificado, use "${currentYear}".
+        
+        Exemplo de saída:
+        { "type": "despesa", "category": "Alimentação", "amount": 55.40, "description": "Lanche no iFood", "month": "${currentMonthName}", "year": "${currentYear}" }
+    `;
 
+    try {
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const jsonText = response.text().replace(/^```json\s*|```\s*$/g, '').trim();
+        return JSON.parse(jsonText);
+    } catch (error) {
+        console.error('Erro na API Gemini (extração de texto):', error);
+        return null;
+    }
+}
+
+// NOVA FUNÇÃO: Transcreve o áudio usando a API multimodal do Gemini
+function bufferToGenerativePart(buffer: Buffer, mimeType: string): InlineDataPart {
+  return {
+    inlineData: {
+      data: buffer.toString('base64'),
+      mimeType,
+    },
+  };
+}
+
+async function transcribeAudioWithGemini(audioBuffer: Buffer, mimeType: string): Promise<string> {
+  const model = genai.getGenerativeModel({ model: "gemini-1.5-flash" }); // Modelo multimodal
+  const audioPart = bufferToGenerativePart(audioBuffer, mimeType);
+
+  const prompt = "Transcreva o áudio a seguir para texto. Responda apenas com a transcrição.";
+  
   try {
-    const result = await model.generateContent(prompt);
+    const result = await model.generateContent([prompt, audioPart]);
     const response = await result.response;
-    const jsonText = response.text().replace(/^```json\s*|```\s*$/g, '').trim();
-    return JSON.parse(jsonText);
+    return response.text().trim();
   } catch (error) {
-    console.error('Erro na API Gemini:', error);
-    return null;
+    console.error("Erro na API Gemini (transcrição de áudio):", error);
+    throw new Error('Falha ao transcrever o áudio com a IA.');
   }
 }
+
 
 // O handler principal da Vercel Function
 async function handler(
@@ -88,7 +124,7 @@ async function handler(
   response: VercelResponse,
 ) {
   const secret = request.headers['x-telegram-bot-api-secret-token'];
-  if (secret !== process.env.TELEGRAM_WEBHOOK_SECRET) {
+  if (secret !== webhookSecret) {
     return response.status(401).send('Unauthorized');
   }
 
@@ -99,44 +135,65 @@ async function handler(
   const payload: TelegramPayload = request.body;
   const message = payload.message;
 
-  if (!message || !message.text) {
-    return response.status(200).send('OK: No text message');
+  if (!message || (!message.text && !message.voice)) {
+    return response.status(200).send('OK: No processable message');
   }
 
-  const { chat, text } = message;
+  const { chat } = message;
+  let commandText = message.text;
 
   try {
-    // ---- INÍCIO DA LÓGICA CORRIGIDA ----
-
-    // Passo 1: Verificar se é o comando de vinculação /start
-    if (text.startsWith('/start')) {
-      const parts = text.split(' ');
-      if (parts.length > 1 && parts[1]) {
-        const userIdFromCommand = parts[1];
-        
-        // Salva (ou atualiza) a vinculação na tabela.
-        // `upsert` é ideal aqui: cria se não existe, atualiza se já existe.
-        const { error } = await supabase
-          .from('telegram_links')
-          .upsert(
-            { chat_id: chat.id, user_id: userIdFromCommand },
-            { onConflict: 'chat_id' } // Se já existir um link para este chat_id, ele será atualizado.
-          );
-
-        if (error) {
-          throw new Error(`Não foi possível salvar a vinculação: ${error.message}`);
-        }
-
-        await sendTelegramMessage(chat.id, '✅ Conta vinculada com sucesso! Agora você já pode me enviar suas transações por texto (ex: "gastei 50 no mercado").');
-        return response.status(200).send('Link successful');
-
-      } else {
-        await sendTelegramMessage(chat.id, 'Bem-vindo! Para vincular sua conta, por favor, acesse a seção "Minha Conta" no aplicativo Spendly.');
-        return response.status(200).send('Welcome message sent');
+    // LÓGICA DE ÁUDIO ATUALIZADA
+    if (message.voice) {
+      await sendTelegramMessage(chat.id, 'Recebi seu áudio, vou transcrever...');
+      
+      const fileInfoUrl = `https://api.telegram.org/bot${telegramBotToken}/getFile?file_id=${message.voice.file_id}`;
+      const fileInfoResponse = await fetch(fileInfoUrl);
+      const fileInfo = await fileInfoResponse.json();
+      
+      if (!fileInfo.ok || !fileInfo.result.file_path) {
+        throw new Error("Não foi possível obter informações do arquivo de áudio do Telegram.");
       }
+      
+      const fileUrl = `https://api.telegram.org/file/bot${telegramBotToken}/${fileInfo.result.file_path}`;
+      const audioResponse = await fetch(fileUrl);
+      const audioArrayBuffer = await audioResponse.arrayBuffer();
+      const audioBuffer = Buffer.from(audioArrayBuffer);
+      const mimeType = message.voice.mime_type || 'audio/ogg';
+
+      // Chama a nova função que usa Gemini
+      const transcribedText = await transcribeAudioWithGemini(audioBuffer, mimeType);
+
+      if (!transcribedText) {
+        await sendTelegramMessage(chat.id, "Não consegui entender o que foi dito no áudio. Pode tentar novamente?");
+        return response.status(200).send('Transcription failed or empty');
+      }
+
+      await sendTelegramMessage(chat.id, `Entendi: "_${transcribedText}_"\n\nAgora vou processar a transação...`);
+      commandText = transcribedText;
+    }
+    
+    // O resto do fluxo continua igual, processando o commandText
+    if (commandText && commandText.startsWith('/start')) {
+        const parts = text.split(' ');
+        if (parts.length > 1 && parts[1]) {
+            const userIdFromCommand = parts[1];
+            const { error } = await supabase
+            .from('telegram_links')
+            .upsert({ chat_id: chat.id, user_id: userIdFromCommand }, { onConflict: 'chat_id' });
+            if (error) throw new Error(`Não foi possível salvar a vinculação: ${error.message}`);
+            await sendTelegramMessage(chat.id, '✅ Conta vinculada com sucesso! Agora você já pode me enviar suas transações.');
+            return response.status(200).send('Link successful');
+        } else {
+            await sendTelegramMessage(chat.id, 'Bem-vindo! Para vincular sua conta, acesse a seção "Minha Conta" no app Spendly.');
+            return response.status(200).send('Welcome message sent');
+        }
+    }
+    
+    if (!commandText) {
+        return response.status(200).send('No text to process');
     }
 
-    // Passo 2: Se não for o comando /start, continua com a lógica normal
     const { data: userData, error: userError } = await supabase
       .from('telegram_links') 
       .select('user_id, default_budget_id')
@@ -144,26 +201,29 @@ async function handler(
       .single();
 
     if (userError || !userData) {
-      await sendTelegramMessage(chat.id, `Olá! Sua conta do Telegram não está vinculada ao Spendly. Por favor, acesse o app, vá em "Minha Conta" e clique em "Vincular com Telegram".`);
+      await sendTelegramMessage(chat.id, `Sua conta do Telegram não está vinculada ao Spendly. Acesse o app para fazer a vinculação.`);
       return response.status(200).send('User not linked');
     }
 
     const { user_id, default_budget_id } = userData;
     if (!default_budget_id) {
-        await sendTelegramMessage(chat.id, `Você precisa definir um orçamento padrão no app (na tela "Minha Conta") para poder criar transações pelo Telegram.`);
+        await sendTelegramMessage(chat.id, `Você precisa definir um orçamento padrão no app para poder criar transações pelo Telegram.`);
         return response.status(200).send('Default budget not set');
     }
+    
+    if (!message.voice) {
+        await sendTelegramMessage(chat.id, 'Analisando seu comando...');
+    }
 
-    await sendTelegramMessage(chat.id, 'Analisando seu comando...');
-    const transactionData = await extractTransaction(text);
+    const transactionData = await extractTransaction(commandText);
 
     if (!transactionData || !transactionData.amount || !transactionData.category || !transactionData.type) {
-      await sendTelegramMessage(chat.id, 'Não consegui entender os detalhes da transação. Tente novamente, por exemplo: "gastei 50 reais no iFood"');
+      await sendTelegramMessage(chat.id, 'Não consegui extrair os detalhes da transação. Tente ser mais específico.');
       return response.status(200).send('AI extraction failed');
     }
 
     const { error: insertError } = await supabase.from('transactions').insert({
-      user_id: user_id,
+      user_id,
       budget_id: default_budget_id,
       year: transactionData.year,
       month: transactionData.month,
@@ -174,9 +234,7 @@ async function handler(
       is_completed: false, 
     });
 
-    if (insertError) {
-      throw insertError;
-    }
+    if (insertError) throw insertError;
 
     const confirmationText = `✅ Transação registrada com sucesso!\n\n*Tipo:* ${transactionData.type}\n*Categoria:* ${transactionData.category}\n*Valor:* R$ ${Number(transactionData.amount).toFixed(2)}\n*Descrição:* ${transactionData.description}`;
     await sendTelegramMessage(chat.id, confirmationText);
@@ -184,7 +242,7 @@ async function handler(
     return response.status(200).send('Success');
   } catch (error: any) {
     console.error('Erro no webhook do Telegram:', error);
-    await sendTelegramMessage(chat.id, `Ocorreu um erro ao processar sua solicitação. A equipe de suporte foi notificada.`);
+    await sendTelegramMessage(chat.id, `Ocorreu um erro ao processar sua solicitação.`);
     return response.status(200).send('Error processed');
   }
 }
