@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// CORREÇÃO 2: A constante 'months' foi movida para dentro deste arquivo.
+// CORREÇÃO 2: A constante 'months' é definida localmente para evitar erros de importação.
 const months = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
@@ -30,7 +30,7 @@ const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN!;
 
 // Validar se todas as variáveis de ambiente estão presentes
 if (!supabaseUrl || !supabaseServiceKey || !geminiApiKey || !telegramBotToken) {
-    console.error("Variáveis de ambiente faltando. Verifique a configuração na Vercel.");
+    console.error("ERRO CRÍTICO: Variáveis de ambiente faltando. Verifique a configuração na Vercel.");
 }
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -77,7 +77,7 @@ async function extractTransaction(text: string): Promise<any> {
   try {
     const result = await model.generateContent(prompt);
     const response = await result.response;
-    const jsonText = response.text().replace(/^```json\s*|```\s*$/g, '');
+    const jsonText = response.text().replace(/^```json\s*|```\s*$/g, '').trim();
     return JSON.parse(jsonText);
   } catch (error) {
     console.error('Erro na API Gemini:', error);
@@ -110,7 +110,6 @@ async function handler(
   const { chat, text } = message;
 
   try {
-    // 1. Encontrar o usuário do seu app com base no chat_id do Telegram
     const { data: userData, error: userError } = await supabase
       .from('telegram_links') 
       .select('user_id, default_budget_id')
@@ -128,9 +127,8 @@ async function handler(
         return response.status(200).send('Default budget not set');
     }
 
-    await sendTelegramMessage(chat.id, 'Processando seu pedido...');
+    await sendTelegramMessage(chat.id, 'Analisando seu comando...');
 
-    // 2. Extrair dados da transação com a IA
     const transactionData = await extractTransaction(text);
 
     if (!transactionData || !transactionData.amount || !transactionData.category || !transactionData.type) {
@@ -138,7 +136,6 @@ async function handler(
       return response.status(200).send('AI extraction failed');
     }
 
-    // 3. Salvar a transação no Supabase
     const { error: insertError } = await supabase.from('transactions').insert({
       user_id: user_id,
       budget_id: default_budget_id,
@@ -155,7 +152,6 @@ async function handler(
       throw insertError;
     }
 
-    // 4. Enviar confirmação ao usuário
     const confirmationText = `✅ Transação registrada com sucesso!\n\n*Tipo:* ${transactionData.type}\n*Categoria:* ${transactionData.category}\n*Valor:* R$ ${Number(transactionData.amount).toFixed(2)}\n*Descrição:* ${transactionData.description}`;
     await sendTelegramMessage(chat.id, confirmationText);
 
