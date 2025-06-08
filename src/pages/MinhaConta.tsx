@@ -29,7 +29,7 @@ type TelegramLink = {
 };
 
 // Obtenha o nome de usuário do bot a partir das variáveis de ambiente
-const TELEGRAM_BOT_USERNAME = import.meta.env.VITE_TELEGRAM_BOT_USERNAME || "seu_finance_bot";
+const TELEGRAM_BOT_USERNAME = import.meta.env.VITE_TELEGRAM_BOT_USERNAME || "spendlyai_bot";
 
 const MinhaConta = () => {
   const { user } = useAuth();
