@@ -1,9 +1,4 @@
 {
-  "functions": {
-    "api/telegram-webhook.js": {
-      "runtime": "@vercel/node"
-    }
-  },
   "rewrites": [
     {
       "source": "/(.*)",
