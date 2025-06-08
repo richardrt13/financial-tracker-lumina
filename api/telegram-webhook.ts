@@ -1,7 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { months } from '../src/components/constants';
+
+// CORREÇÃO 2: A constante 'months' foi movida para dentro deste arquivo.
+const months = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+];
 
 // Interfaces para a estrutura de dados do Telegram
 interface TelegramMessage {
@@ -26,7 +31,6 @@ const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN!;
 // Validar se todas as variáveis de ambiente estão presentes
 if (!supabaseUrl || !supabaseServiceKey || !geminiApiKey || !telegramBotToken) {
     console.error("Variáveis de ambiente faltando. Verifique a configuração na Vercel.");
-    // Não podemos prosseguir sem as variáveis
 }
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -82,10 +86,10 @@ async function extractTransaction(text: string): Promise<any> {
 }
 
 // O handler principal da Vercel Function
-const handler = async (
+async function handler(
   request: VercelRequest,
   response: VercelResponse,
-) => {
+) {
   // Verificação de segurança
   const secret = request.headers['x-telegram-bot-api-secret-token'];
   if (secret !== process.env.TELEGRAM_WEBHOOK_SECRET) {
@@ -124,7 +128,6 @@ const handler = async (
         return response.status(200).send('Default budget not set');
     }
 
-    // Enviar mensagem de "Processando..." antes da chamada à IA
     await sendTelegramMessage(chat.id, 'Processando seu pedido...');
 
     // 2. Extrair dados da transação com a IA
@@ -159,12 +162,10 @@ const handler = async (
     return response.status(200).send('Success');
   } catch (error: any) {
     console.error('Erro no webhook do Telegram:', error);
-    // Envia uma mensagem de erro genérica para o usuário
     await sendTelegramMessage(chat.id, `Ocorreu um erro ao processar sua solicitação. A equipe de suporte foi notificada.`);
-    // Retorna status 200 para o Telegram para evitar que ele tente reenviar a mensagem
     return response.status(200).send('Error processed');
   }
-};
+}
 
-// CORREÇÃO AQUI: Exportar usando module.exports
-module.exports = handler;
+// CORREÇÃO 1: Exportar usando a sintaxe de Módulo ES (export default)
+export default handler;
