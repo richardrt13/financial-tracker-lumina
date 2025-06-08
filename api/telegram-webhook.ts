@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { GoogleGenerativeAI, InlineDataPart } from '@google/generative-ai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const months = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -8,21 +8,13 @@ const months = [
 ];
 
 // Interfaces para a estrutura de dados do Telegram
-interface TelegramVoice {
-  file_id: string;
-  file_unique_id: string;
-  duration: number;
-  mime_type: string; // Geralmente 'audio/ogg'
-  file_size?: number;
-}
-
 interface TelegramMessage {
   message_id: number;
   from: { id: number; is_bot: boolean; first_name: string; username: string; };
   chat: { id: number; first_name: string; username: string; type: 'private'; };
   date: number;
   text?: string;
-  voice?: TelegramVoice;
+  voice?: { file_id: string; mime_type: string; };
 }
 
 interface TelegramPayload {
@@ -38,7 +30,7 @@ const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN!;
 const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET!;
 
 if (!supabaseUrl || !supabaseServiceKey || !geminiApiKey || !telegramBotToken || !webhookSecret) {
-    console.error("ERRO CRÍTICO: Variáveis de ambiente faltando. Verifique a configuração na Vercel.");
+    console.error("ERRO CRÍTICO: Variáveis de ambiente faltando.");
 }
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -62,64 +54,52 @@ async function sendTelegramMessage(chat_id: number, text: string) {
 }
 
 async function extractTransaction(text: string): Promise<any> {
-    const model = genai.getGenerativeModel({ model: 'gemini-1.5-flash' });
-    const currentYear = new Date().getFullYear();
-    const currentMonthName = months[new Date().getMonth()];
+  const model = genai.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  const currentYear = new Date().getFullYear();
+  const currentMonthName = months[new Date().getMonth()];
 
-    const prompt = `
-        Analise o texto a seguir para extrair uma transação financeira: "${text}".
-        Retorne APENAS um objeto JSON com os campos: type, category, amount, description, month, year.
-        - 'type' deve ser 'receita', 'despesa' ou 'investimento'.
-        - 'category' deve ser uma categoria adequada.
-        - 'amount' deve ser um número.
-        - 'description' é a descrição completa.
-        - 'month' é o nome do mês em português (Ex: "Junho"). Se não especificado, use "${currentMonthName}".
-        - 'year' é o ano com 4 dígitos. Se não especificado, use "${currentYear}".
-        
-        Exemplo de saída:
-        { "type": "despesa", "category": "Alimentação", "amount": 55.40, "description": "Lanche no iFood", "month": "${currentMonthName}", "year": "${currentYear}" }
-    `;
+  const prompt = `
+    Analise o texto a seguir para extrair uma transação financeira: "${text}".
+    Retorne APENAS um objeto JSON com os campos: type, category, amount, description, month, year.
+    - 'type' deve ser 'receita', 'despesa' ou 'investimento'.
+    - 'category' deve ser uma categoria adequada.
+    - 'amount' deve ser um número.
+    - 'description' é a descrição completa.
+    - 'month' é o nome do mês em português (Ex: "Junho"). Se não especificado, use "${currentMonthName}".
+    - 'year' é o ano com 4 dígitos. Se não especificado, use "${currentYear}".
+    
+    Exemplo de saída:
+    { "type": "despesa", "category": "Alimentação", "amount": 55.40, "description": "Lanche no iFood", "month": "${currentMonthName}", "year": "${currentYear}" }
+  `;
 
-    try {
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const jsonText = response.text().replace(/^```json\s*|```\s*$/g, '').trim();
-        return JSON.parse(jsonText);
-    } catch (error) {
-        console.error('Erro na API Gemini (extração de texto):', error);
-        return null;
-    }
-}
-
-// NOVA FUNÇÃO: Transcreve o áudio usando a API multimodal do Gemini
-function bufferToGenerativePart(buffer: Buffer, mimeType: string): InlineDataPart {
-  return {
-    inlineData: {
-      data: buffer.toString('base64'),
-      mimeType,
-    },
-  };
-}
-
-async function transcribeAudioWithGemini(audioBuffer: Buffer, mimeType: string): Promise<string> {
-  const model = genai.getGenerativeModel({ model: "gemini-1.5-flash" }); // Modelo multimodal
-  const audioPart = bufferToGenerativePart(audioBuffer, mimeType);
-
-  const prompt = "Transcreva o áudio a seguir para texto. Responda apenas com a transcrição.";
-  
   try {
-    const result = await model.generateContent([prompt, audioPart]);
+    const result = await model.generateContent(prompt);
     const response = await result.response;
-    return response.text().trim();
+    const jsonText = response.text().replace(/^```json\s*|```\s*$/g, '').trim();
+    return JSON.parse(jsonText);
   } catch (error) {
-    console.error("Erro na API Gemini (transcrição de áudio):", error);
-    throw new Error('Falha ao transcrever o áudio com a IA.');
+    console.error('Erro na API Gemini:', error);
+    return null;
   }
+}
+
+async function transcribeAudioWithGemini(audioBuffer: Buffer, mime_type: string): Promise<string> {
+    const model = genai.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const audioPart = { inlineData: { data: audioBuffer.toString('base64'), mimeType: mime_type } };
+    const prompt = "Transcreva este áudio para texto. Responda apenas com a transcrição.";
+    try {
+        const result = await model.generateContent([prompt, audioPart]);
+        const response = await result.response;
+        return response.text().trim();
+    } catch (error) {
+        console.error("Erro na API Gemini (transcrição de áudio):", error);
+        throw new Error('Falha ao transcrever o áudio com a IA.');
+    }
 }
 
 
 // O handler principal da Vercel Function
-async function handler(
+export default async function handler(
   request: VercelRequest,
   response: VercelResponse,
 ) {
@@ -135,65 +115,61 @@ async function handler(
   const payload: TelegramPayload = request.body;
   const message = payload.message;
 
-  if (!message || (!message.text && !message.voice)) {
-    return response.status(200).send('OK: No processable message');
+  if (!message) {
+    return response.status(200).send('OK: No message payload');
   }
 
   const { chat } = message;
-  let commandText = message.text;
+  let commandText = message.text; // Pode ser undefined
 
   try {
-    // LÓGICA DE ÁUDIO ATUALIZADA
+    // Lógica de Áudio (se existir)
     if (message.voice) {
       await sendTelegramMessage(chat.id, 'Recebi seu áudio, vou transcrever...');
-      
       const fileInfoUrl = `https://api.telegram.org/bot${telegramBotToken}/getFile?file_id=${message.voice.file_id}`;
       const fileInfoResponse = await fetch(fileInfoUrl);
       const fileInfo = await fileInfoResponse.json();
-      
-      if (!fileInfo.ok || !fileInfo.result.file_path) {
-        throw new Error("Não foi possível obter informações do arquivo de áudio do Telegram.");
-      }
+      if (!fileInfo.ok) throw new Error("Não foi possível obter informações do arquivo de áudio.");
       
       const fileUrl = `https://api.telegram.org/file/bot${telegramBotToken}/${fileInfo.result.file_path}`;
       const audioResponse = await fetch(fileUrl);
       const audioArrayBuffer = await audioResponse.arrayBuffer();
       const audioBuffer = Buffer.from(audioArrayBuffer);
-      const mimeType = message.voice.mime_type || 'audio/ogg';
-
-      // Chama a nova função que usa Gemini
-      const transcribedText = await transcribeAudioWithGemini(audioBuffer, mimeType);
-
+      
+      const transcribedText = await transcribeAudioWithGemini(audioBuffer, message.voice.mime_type || 'audio/ogg');
       if (!transcribedText) {
-        await sendTelegramMessage(chat.id, "Não consegui entender o que foi dito no áudio. Pode tentar novamente?");
-        return response.status(200).send('Transcription failed or empty');
+        await sendTelegramMessage(chat.id, "Não consegui entender o que foi dito no áudio.");
+        return response.status(200).send('Transcription failed');
       }
-
-      await sendTelegramMessage(chat.id, `Entendi: "_${transcribedText}_"\n\nAgora vou processar a transação...`);
+      await sendTelegramMessage(chat.id, `Entendi: "_${transcribedText}_"\n\nAgora vou processar...`);
       commandText = transcribedText;
     }
-    
-    // O resto do fluxo continua igual, processando o commandText
-    if (commandText && commandText.startsWith('/start')) {
-        const parts = text.split(' ');
-        if (parts.length > 1 && parts[1]) {
-            const userIdFromCommand = parts[1];
-            const { error } = await supabase
-            .from('telegram_links')
-            .upsert({ chat_id: chat.id, user_id: userIdFromCommand }, { onConflict: 'chat_id' });
-            if (error) throw new Error(`Não foi possível salvar a vinculação: ${error.message}`);
-            await sendTelegramMessage(chat.id, '✅ Conta vinculada com sucesso! Agora você já pode me enviar suas transações.');
-            return response.status(200).send('Link successful');
-        } else {
-            await sendTelegramMessage(chat.id, 'Bem-vindo! Para vincular sua conta, acesse a seção "Minha Conta" no app Spendly.');
-            return response.status(200).send('Welcome message sent');
-        }
-    }
-    
+
+    // Se, após tudo, não tivermos texto de comando, não fazemos nada.
     if (!commandText) {
-        return response.status(200).send('No text to process');
+        return response.status(200).send('OK: No text command to process');
     }
 
+    // CORREÇÃO: Tratar o comando /start aqui, onde 'commandText' já está definido
+    if (commandText.startsWith('/start')) {
+      const parts = commandText.split(' ');
+      if (parts.length > 1 && parts[1]) {
+        const userIdFromCommand = parts[1];
+        const { error } = await supabase
+          .from('telegram_links')
+          .upsert({ chat_id: chat.id, user_id: userIdFromCommand }, { onConflict: 'chat_id' });
+
+        if (error) throw new Error(`Não foi possível salvar a vinculação: ${error.message}`);
+        
+        await sendTelegramMessage(chat.id, '✅ Conta vinculada com sucesso! Agora você já pode me enviar suas transações.');
+        return response.status(200).send('Link successful');
+      } else {
+        await sendTelegramMessage(chat.id, 'Bem-vindo! Para vincular sua conta, acesse a seção "Minha Conta" no app Spendly.');
+        return response.status(200).send('Welcome message sent');
+      }
+    }
+    
+    // Lógica para transações normais
     const { data: userData, error: userError } = await supabase
       .from('telegram_links') 
       .select('user_id, default_budget_id')
@@ -207,10 +183,10 @@ async function handler(
 
     const { user_id, default_budget_id } = userData;
     if (!default_budget_id) {
-        await sendTelegramMessage(chat.id, `Você precisa definir um orçamento padrão no app para poder criar transações pelo Telegram.`);
+        await sendTelegramMessage(chat.id, `Você precisa definir um orçamento padrão no app (em "Minha Conta") para criar transações pelo Telegram.`);
         return response.status(200).send('Default budget not set');
     }
-    
+
     if (!message.voice) {
         await sendTelegramMessage(chat.id, 'Analisando seu comando...');
     }
@@ -236,7 +212,7 @@ async function handler(
 
     if (insertError) throw insertError;
 
-    const confirmationText = `✅ Transação registrada com sucesso!\n\n*Tipo:* ${transactionData.type}\n*Categoria:* ${transactionData.category}\n*Valor:* R$ ${Number(transactionData.amount).toFixed(2)}\n*Descrição:* ${transactionData.description}`;
+    const confirmationText = `✅ Transação registrada!\n\n*Tipo:* ${transactionData.type}\n*Cat:* ${transactionData.category}\n*Valor:* R$ ${Number(transactionData.amount).toFixed(2)}`;
     await sendTelegramMessage(chat.id, confirmationText);
 
     return response.status(200).send('Success');
@@ -246,5 +222,3 @@ async function handler(
     return response.status(200).send('Error processed');
   }
 }
-
-export default handler;
