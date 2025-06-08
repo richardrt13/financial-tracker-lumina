@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// CORREÇÃO 2: A constante 'months' é definida localmente para evitar erros de importação.
+// A constante 'months' é definida localmente para evitar erros de importação.
 const months = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
@@ -86,7 +86,7 @@ async function extractTransaction(text: string): Promise<any> {
 }
 
 // O handler principal da Vercel Function
-async function handler(
+export default async function handler(
   request: VercelRequest,
   response: VercelResponse,
 ) {
@@ -162,6 +162,3 @@ async function handler(
     return response.status(200).send('Error processed');
   }
 }
-
-// CORREÇÃO 1: Exportar usando a sintaxe de Módulo ES (export default)
-export default handler;
