@@ -181,6 +181,7 @@ export function Dashboard({ budgetId }: DashboardProps) {
         onDeleteClick={handleDeleteDialogTransition}
         onToggleStatus={toggleTransactionStatus}
         isProcessing={isProcessing}
+        valuesVisible={valuesVisible}
       />
 
       <EditTransactionDialog
@@ -209,6 +210,7 @@ export function Dashboard({ budgetId }: DashboardProps) {
         onDeleteClick={handleDeleteDialogTransition}
         onToggleStatus={toggleTransactionStatus}
         isProcessing={isProcessing}
+        valuesVisible={valuesVisible}
       />
 
 
