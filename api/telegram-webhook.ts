@@ -223,6 +223,7 @@ async function handler(
                 await supabase.from('categories').insert({ user_id: transactionPayload.user_id, name: transactionPayload.category, type: transactionPayload.type });
                 await supabase.from('transactions').insert(transactionPayload);
                 await sendTelegramMessage(chat.id, `✅ Categoria *"${transactionPayload.category}"* criada e transação registrada com sucesso!`);
+                supabase.functions.invoke('process-queue').catch(console.error);
                 return response.status(200).send('Pending action resolved: YES');
             }
         } else {
@@ -265,6 +266,7 @@ async function handler(
     // Salvar transação com categoria existente
     const { error: insertError } = await supabase.from('transactions').insert({ user_id, budget_id: default_budget_id, ...transactionData, is_completed: false });
     if (insertError) throw insertError;
+    supabase.functions.invoke('process-queue').catch(console.error);
     const confirmationText = `✅ Transação registrada na categoria existente *"${transactionData.category}"*!`;
     await sendTelegramMessage(chat.id, confirmationText);
 

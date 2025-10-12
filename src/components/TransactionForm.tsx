@@ -360,6 +360,7 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
       if (error) throw error;
 
       toast({ title: "Sucesso", description: `Transação(ões) adicionada(s) com sucesso!` });
+      supabase.functions.invoke('process-queue').catch(console.error);
       
       const defaultNewYear = String(new Date().getFullYear());
       const defaultNewMonth = months[new Date().getMonth()];
