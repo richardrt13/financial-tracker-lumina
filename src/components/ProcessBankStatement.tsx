@@ -291,6 +291,7 @@ export function ProcessBankStatement({ budgetId }: ProcessBankStatementProps) {
       if (error) throw error;
 
       toast({ title: "Sucesso!", description: `${transactionsToImport.length} transações importadas.` });
+      supabase.functions.invoke('process-queue').catch(console.error);
       setExtractedTransactions([]);
       setSelectedFile(null);
       setImagePreview(null);
