@@ -298,6 +298,7 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
   };
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    if (isLoading) return;
     if (!userId || !budgetId) {
       toast({ title: "Erro", description: "Usuário ou orçamento não identificado.", variant: "destructive" });
       return;
