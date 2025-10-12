@@ -1,4 +1,3 @@
-// SummaryCards.tsx
 import {
   Card,
   CardContent,
@@ -14,6 +13,7 @@ interface SummaryCardsProps {
   summaryData: SummaryData;
   completionData: CompletionData;
   onCardClick: (type: string) => void;
+  valuesVisible: boolean; // Adicione esta propriedade
 }
 
 const summaryCards = [
@@ -26,13 +26,14 @@ const summaryCards = [
 export function SummaryCards({
   summaryData,
   completionData,
-  onCardClick
+  onCardClick,
+  valuesVisible, // Receba a propriedade
 }: SummaryCardsProps) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       {summaryCards.map((card) => (
-        <Card 
-          key={card.type} 
+        <Card
+          key={card.type}
           className={`hover:shadow-lg transition-shadow ${card.type !== 'saldo' ? 'cursor-pointer' : ''}`}
           onClick={() => card.type !== 'saldo' ? onCardClick(card.type) : null}
         >
@@ -41,7 +42,7 @@ export function SummaryCards({
           </CardHeader>
           <CardContent>
             <p className={`text-2xl font-bold ${card.color}`}>
-              R$ {formatCurrency(summaryData[card.type as keyof SummaryData])}
+              {valuesVisible ? `R$ ${formatCurrency(summaryData[card.type as keyof SummaryData])}` : "R$ ••••"}
             </p>
           </CardContent>
           {card.type !== 'saldo' && (
@@ -54,8 +55,8 @@ export function SummaryCards({
                   </span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2.5">
-                  <div 
-                    className={`h-2.5 rounded-full ${card.type === 'receita' ? 'bg-green-600' : 
+                  <div
+                    className={`h-2.5 rounded-full ${card.type === 'receita' ? 'bg-green-600' :
                                 card.type === 'despesa' ? 'bg-red-600' : 'bg-blue-600'}`}
                     style={{ width: `${completionData[card.type as keyof CompletionData].percentage}%` }}
                   ></div>

@@ -1,10 +1,10 @@
-// /components/dashboard/index.tsx
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/components/ui/use-toast";
-import { Loader2 } from "lucide-react";
+import { Loader2, Eye, EyeOff } from "lucide-react";
 import { FinancialAssistantChat } from '@/components/FinancialAssistantChat';
 import { supabase } from '@/lib/supabase';
+import { Button } from "@/components/ui/button"; 
 
 import { FilterControls } from './ui/FilterControls';
 import { SummaryCards } from './ui/SummaryCards';
@@ -31,13 +31,14 @@ export function Dashboard({ budgetId }: DashboardProps) {
       "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
     ];
     return months[currentMonthIndex];
-  });  
+  });
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDueSoonDialogOpen, setIsDueSoonDialogOpen] = useState(false);
   const [selectedType, setSelectedType] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null); // Ensure userId is managed
+  const [userId, setUserId] = useState<string | null>(null);
+  const [valuesVisible, setValuesVisible] = useState(true); // Estado para controlar a visibilidade
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -54,13 +55,13 @@ export function Dashboard({ budgetId }: DashboardProps) {
     completionData,
     transactionsData,
     dueSoonData,
-    allTransactionsHistory, // Make sure this is fetched and available for FinancialAssistantChat
+    allTransactionsHistory,
     fetchData
   } = useTransactionData(userId, budgetId, selectedYear, selectedMonth);
 
   const {
     isProcessing,
-    selectedTransaction, // This holds the full transaction object
+    selectedTransaction,
     editFormData,
     setEditFormData,
     handleEditClick,
@@ -68,7 +69,7 @@ export function Dashboard({ budgetId }: DashboardProps) {
     toggleTransactionStatus,
     handleEditTransaction,
     handleDeleteTransaction,
-    availableIncomesForEdit, // Get this from the hook
+    availableIncomesForEdit,
   } = useTransactionActions(userId, budgetId, fetchData);
 
 
@@ -132,31 +133,40 @@ export function Dashboard({ budgetId }: DashboardProps) {
 
   return (
     <div className="space-y-4">
-      {/* ... FilterControls and DueSoonAlert ... */}
-       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <FilterControls 
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <FilterControls
           selectedYear={selectedYear}
           selectedMonth={selectedMonth}
           onYearChange={setSelectedYear}
           onMonthChange={setSelectedMonth}
         />
-        
-        <DueSoonAlert 
-          dueSoonData={dueSoonData}
-          onShowDetails={() => setIsDueSoonDialogOpen(true)}
-        />
+
+        <div className="flex items-center gap-2">
+            <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setValuesVisible(!valuesVisible)}
+            >
+                {valuesVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
+            <DueSoonAlert
+              dueSoonData={dueSoonData}
+              onShowDetails={() => setIsDueSoonDialogOpen(true)}
+            />
+        </div>
       </div>
 
 
-      {isLoading && !isProcessing ? ( // Adjust loading condition if needed
+      {isLoading && !isProcessing ? (
         <div className="flex justify-center items-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
         </div>
       ) : (
-        <SummaryCards 
+        <SummaryCards
           summaryData={summaryData}
           completionData={completionData}
           onCardClick={handleCardClick}
+          valuesVisible={valuesVisible}
         />
       )}
 
@@ -180,11 +190,10 @@ export function Dashboard({ budgetId }: DashboardProps) {
         onFormChange={setEditFormData}
         onSave={saveEditTransaction}
         isProcessing={isProcessing}
-        availableIncomes={availableIncomesForEdit} // Pass available incomes
-        transactionType={selectedTransaction?.type} // Pass the type of the transaction being edited
+        availableIncomes={availableIncomesForEdit}
+        transactionType={selectedTransaction?.type}
       />
 
-      {/* ... other dialogs ... */}
       <DeleteTransactionDialog
         isOpen={isDeleteDialogOpen}
         onOpenChange={setIsDeleteDialogOpen}
@@ -211,13 +220,13 @@ export function Dashboard({ budgetId }: DashboardProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <FinancialAssistantChat 
+          <FinancialAssistantChat
             summaryData={summaryData}
             transactionsData={transactionsData}
             completionData={completionData}
             selectedYear={selectedYear}
             selectedMonth={selectedMonth}
-            allTransactionsHistory={allTransactionsHistory || []} // Ensure it's an array
+            allTransactionsHistory={allTransactionsHistory || []}
           />
         </CardContent>
       </Card>

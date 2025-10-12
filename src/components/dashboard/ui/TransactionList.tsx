@@ -1,7 +1,6 @@
-// /components/dashboard/ui/TransactionList.tsx
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
-import { Calendar, MoreVertical, Edit, Trash2, Link2, ArrowUpDown, ArrowUp, ArrowDown, Coins } from "lucide-react"; // Added Link2, Coins
+import { Calendar, MoreVertical, Edit, Trash2, Link2, ArrowUpDown, ArrowUp, ArrowDown, Coins } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -23,6 +22,7 @@ interface TransactionListProps {
   onToggleStatus: (transaction: Transaction) => void;
   isProcessing: boolean;
   highlightDueDate?: boolean;
+  valuesVisible: boolean; // Adicione esta propriedade
 }
 
 type SortField = 'created_at' | 'description' | 'amount' | 'due_day';
@@ -35,7 +35,8 @@ export function TransactionList({
   onDeleteClick,
   onToggleStatus,
   isProcessing,
-  highlightDueDate = false
+  highlightDueDate = false,
+  valuesVisible, // Receba a propriedade
 }: TransactionListProps) {
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
@@ -101,10 +102,10 @@ export function TransactionList({
       </div>
 
       {sortedTransactions.map((transaction) => (
-        <div 
-          key={transaction.id} 
-          className={`p-3 mb-2 rounded-md border ${transaction.is_completed 
-            ? 'border-green-200 bg-green-50/70' 
+        <div
+          key={transaction.id}
+          className={`p-3 mb-2 rounded-md border ${transaction.is_completed
+            ? 'border-green-200 bg-green-50/70'
             : highlightDueDate && transaction.due_day && getVencimentoStatus(transaction.due_day) !== 'normal'
               ? (getVencimentoStatus(transaction.due_day) === 'atrasado' ? 'border-red-300 bg-red-50/70' : 'border-amber-300 bg-amber-50/70')
               : 'border-gray-200 bg-white'} hover:shadow-sm transition-shadow`}
@@ -126,7 +127,7 @@ export function TransactionList({
                   <p className="text-xs text-gray-500">{transaction.category}</p>
                 </div>
               </div>
-              
+
               <div className="text-xs text-gray-500 mt-1 space-y-0.5">
                 {transaction.due_day && (
                   <div className="flex items-center">
@@ -156,25 +157,25 @@ export function TransactionList({
                     </TooltipTrigger>
                     <TooltipContent side="top" className="text-xs">
                       <p>{transaction.linked_income_details.description || transaction.linked_income_details.category}</p>
-                      <p>Valor: R$ {formatCurrency(transaction.linked_income_details.amount)}</p>
+                      <p>Valor: {valuesVisible ? `R$ ${formatCurrency(transaction.linked_income_details.amount)}` : "R$ ••••"}</p>
                     </TooltipContent>
                   </Tooltip>
                 )}
               </div>
             </div>
-            
-            <div className="text-right ml-2 min-w-[100px]"> {/* Added min-w for better layout */}
-              <p className={`font-semibold text-sm ${transaction.is_completed ? 'text-gray-500' : 
-                transaction.type === 'receita' ? 'text-green-600' : 
+
+            <div className="text-right ml-2 min-w-[100px]">
+              <p className={`font-semibold text-sm ${transaction.is_completed ? 'text-gray-500' :
+                transaction.type === 'receita' ? 'text-green-600' :
                 transaction.type === 'despesa' ? 'text-red-600' : 'text-blue-600'}`}>
-                {transaction.type === 'despesa' || transaction.type === 'investimento' ? '-' : '+'} R$ {formatCurrency(transaction.amount)}
+                {valuesVisible ? `${transaction.type === 'despesa' || transaction.type === 'investimento' ? '-' : '+'} R$ ${formatCurrency(transaction.amount)}` : "R$ ••••"}
               </p>
               {transaction.type === 'receita' && transaction.remaining_after_links !== undefined && !transaction.is_completed && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <div className="text-xs text-gray-500 mt-0.5 flex items-center justify-end cursor-default">
                       <Coins className="h-3 w-3 mr-1 text-yellow-500" />
-                      <span>Sobra: R$ {formatCurrency(transaction.remaining_after_links)}</span>
+                      <span>Sobra: {valuesVisible ? `R$ ${formatCurrency(transaction.remaining_after_links)}` : "R$ ••••"}</span>
                     </div>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="text-xs">
@@ -188,7 +189,7 @@ export function TransactionList({
                 </p>
               )}
             </div>
-            
+
             <div className="ml-1">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
