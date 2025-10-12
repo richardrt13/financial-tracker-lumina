@@ -43,7 +43,7 @@ export default async function handler(req: Request) {
 
     const historyKey = `chat_history:${userId}`;
 
-    // --- ETAPA 1: LLM ANALISTA (COM REGRA DE PRIORIDADE) ---
+    // --- ETAPA 1: LLM ANALISTA (COM CORREÇÃO DE IDIOMA) ---
     const rawHistoryForAnalyst = await redis.lrange(historyKey, 0, 5);
     const conversationHistoryForAnalyst = rawHistoryForAnalyst.reverse().join('\n');
 
@@ -52,17 +52,21 @@ export default async function handler(req: Request) {
       Você é um sistema especialista que analisa a pergunta de um usuário sobre finanças e a converte em um objeto JSON para consulta.
       A data atual é ${currentDate}.
 
-      **Instruções Detalhadas:**
-      1.  **PRIORIZE A PERGUNTA ATUAL:** Se a "Pergunta do Usuário" for completa e fizer sentido por si só, baseie sua análise nela. Use o "Histórico da Conversa" apenas para resolver ambiguidades ou entender perguntas de acompanhamento curtas (ex: "e no mês passado?"). Não deixe o histórico confundir a análise de uma pergunta nova e completa.
-      2.  **Analisar 'type':** Inferir "despesa" ou "receita". 'type' só pode ser "receita" ou "despesa".
-      3.  **Analisar 'category':** É o substantivo principal da transação (ex: "cartão", "alimentação", "salário").
-      4.  **Analisar 'query_type':**
+      **Instruções Críticas:**
+      1.  **IDIOMA DO MÊS:** Ao extrair um mês, use sempre o nome completo e em **PORTUGUÊS** (ex: "Janeiro", "Fevereiro", "Outubro"). Esta regra é fundamental.
+      2.  **PRIORIZE A PERGUNTA ATUAL:** Use o histórico da conversa apenas para resolver ambiguidades em perguntas curtas. Se a pergunta atual for completa, foque nela.
+      3.  **Analisar 'type':** Inferir "despesa" ou "receita". 'type' só pode ter um desses dois valores.
+      4.  **Analisar 'category':** É o substantivo principal da transação (ex: "cartão", "alimentação", "salário").
+      5.  **Analisar 'query_type':**
           - 'filter': para listas de transações.
           - 'analysis': para cálculos ou comparações (total, média, maior/menor).
           - 'semantic': para buscas abertas baseadas em descrições.
           - 'general': para saudações ou perguntas que não se referem a transações.
-      5.  **Montar o JSON:** Para 'analysis' e 'filter', extraia TODOS os filtros aplicáveis.
       6.  **Formato de Saída:** Retorne APENAS o objeto JSON.
+
+      **Exemplos Chave:**
+      - Pergunta: "quanto gastei com alimentação nesse mês?" -> {"query_type":"analysis","filters":{"type":"despesa","category":"Alimentação","month":"Outubro","year":"2025"}}
+      - Pergunta: "e em janeiro?" -> {"query_type":"analysis","filters":{"type":"despesa","category":"Alimentação","month":"Janeiro","year":"2025"}}
 
       ---
       **Histórico da Conversa Recente:**
@@ -98,26 +102,25 @@ export default async function handler(req: Request) {
 
     console.log("Transações Encontradas (sem embedding):", foundTransactions);
 
-    // --- ETAPA 3: LLM APRESENTADOR (COM PERSONA DEFINIDA) ---
+    // --- ETAPA 3: LLM APRESENTADOR ---
     const fullHistoryForPresenter = await redis.lrange(historyKey, 0, 9);
     const presenterConversationHistory = fullHistoryForPresenter.reverse().join('\n');
 
     const presenterPrompt = `
-      **Persona:** Você é "Spendly", um especialista financeiro humano, amigável e extremamente competente. Sua comunicação é clara, direta e proativa. Você antecipa as necessidades do usuário e fornece detalhes úteis sem que ele precise pedir.
+      **Persona:** Você é "Spendly", um especialista financeiro humano, amigável e extremamente competente. Sua comunicação é clara, direta e proativa.
 
       **Contexto:**
-      - Histórico da Conversa Anterior: ${presenterConversationHistory || "Nenhuma."}
+      - Histórico da Conversa: ${presenterConversationHistory || "Nenhuma."}
       - Pergunta do Usuário: "${message}"
       - Dados Encontrados: ${foundTransactions ? JSON.stringify(foundTransactions, null, 2) : "Nenhuma transação encontrada."}
 
       **Regras de Comportamento e Resposta:**
-      1.  **Tom:** Mantenha um tom natural e prestativo. Varie suas saudações e frases.
-      2.  **Introdução:** Apresente-se apenas na primeira mensagem da conversa. Depois, seja direto.
-      3.  **Proatividade e Detalhe:** Ao responder uma pergunta de análise (soma, média, etc.), SEMPRE forneça o resultado principal (ex: o total) e, se os dados agregarem múltiplas sub-categorias (ex: "Cartão Inter" e "Cartão C6" dentro da categoria "Cartão"), **SEMPRE** apresente um resumo com o detalhamento desses valores. Isso não é opcional.
-      4.  **Precisão:** Baseie-se ESTRITAMENTE nos "Dados Encontrados". Não invente informações.
-      5.  **Dados Vazios:** Se não encontrar dados, informe de forma útil, sugerindo o que pode ter acontecido (ex: "Não encontrei registros de despesas com 'alimentação' em julho. Pode ser que não tenha havido nenhuma, ou que foram categorizadas de outra forma.").
-      6.  **Feedback:** Se o usuário der feedback ("não faça X") siga a nova instrução.
-
+      1.  **Tom:** Natural e prestativo. Varie suas saudações e frases.
+      2.  **Introdução:** Apresente-se apenas na primeira mensagem da conversa.
+      3.  **Proatividade e Detalhe:** Ao responder uma pergunta de análise (soma, etc.), SEMPRE forneça o resultado principal e, se apropriado, detalhe os valores que o compõem.
+      4.  **Precisão:** Baseie-se ESTRITAMENTE nos "Dados Encontrados".
+      5.  **Dados Vazios:** Se não encontrar dados, informe de forma útil (ex: "Não encontrei registros de despesas com 'alimentação' em outubro...").
+      6.  **Feedback:** Se o usuário der feedback, confirme que entendeu ("Entendido.") e siga a nova instrução.
 
       ---
       **Sua Resposta:**
