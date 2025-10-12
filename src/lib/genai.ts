@@ -1,21 +1,17 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, InlineDataPart } from "@google/generative-ai";
 
-// Configuração da chave de API
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
 if (!API_KEY) {
   throw new Error("Chave de API da Gemini não configurada. Defina VITE_GEMINI_API_KEY no arquivo .env.");
 }
 
-// Inicializa o cliente da Gemini
 const genai = new GoogleGenerativeAI(API_KEY);
 
-// Configuração do modelo generativo para texto (existente)
-const textModelName = "gemini-2.0-flash"; // ou o modelo que você estava usando para texto
+const textModelName = "gemini-2.0-flash"; 
 const textGenerativeModel = genai.getGenerativeModel({ model: textModelName });
 
-// Configuração do modelo generativo para multimodal (imagens e texto)
-const multimodalModelName = "gemini-2.0-flash"; // Gemini 1.5 Flash é uma boa escolha para multimodal e custo-benefício
+const multimodalModelName = "gemini-2.0-flash"; 
 const multimodalGenerativeModel = genai.getGenerativeModel({
   model: multimodalModelName,
   safetySettings: [
@@ -27,7 +23,6 @@ const multimodalGenerativeModel = genai.getGenerativeModel({
 });
 
 
-// Função para gerar conteúdo com base em um prompt de texto (existente)
 export async function generateInsights(prompt: string): Promise<string> {
   try {
     const result = await textGenerativeModel.generateContent(prompt);
@@ -39,13 +34,12 @@ export async function generateInsights(prompt: string): Promise<string> {
   }
 }
 
-// Função para converter File (imagem) para o formato GenerativePart da API
 async function fileToGenerativePart(file: File): Promise<InlineDataPart> {
   const base64EncodedDataPromise = new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {
       if (reader.result) {
-        resolve((reader.result as string).split(',')[1]); // Remove o prefixo "data:image/...;base64,"
+        resolve((reader.result as string).split(',')[1]); 
       } else {
         reject(new Error("Falha ao ler o arquivo como Data URL."));
       }
@@ -58,16 +52,14 @@ async function fileToGenerativePart(file: File): Promise<InlineDataPart> {
   };
 }
 
-// Nova interface para os dados brutos extraídos pela IA
 export interface ExtractedTransactionData {
-  date_str?: string;       // Ex: "25/05" ou "25/05/2024"
+  date_str?: string;      
   description?: string;
-  amount_str?: string;     // Ex: "150,75" ou "-50.00"
-  type_suggestion?: 'receita' | 'despesa'; // Sugestão inicial da IA
+  amount_str?: string;     
+  type_suggestion?: 'receita' | 'despesa'; 
 }
 
 
-// Nova função para extrair transações de uma imagem
 export async function extractTransactionsFromImage(
   imageFile: File
 ): Promise<ExtractedTransactionData[]> {
@@ -108,18 +100,15 @@ export async function extractTransactionsFromImage(
       Certifique-se de que o JSON é válido. Não inclua comentários ou texto fora do array JSON.
     `;
 
-    // console.log("genai.ts: Enviando prompt e imagem para Gemini...");
     const result = await multimodalGenerativeModel.generateContent([prompt, imagePart]);
     const response = await result.response;
     const textResponse = response.text();
-    // console.log("genai.ts: Resposta bruta da Gemini:", textResponse);
 
     let extractedData: ExtractedTransactionData[] = [];
     try {
       const jsonMatch = textResponse.match(/(\[[\s\S]*\])/); // Tenta capturar o array JSON
       if (jsonMatch && jsonMatch[0]) {
         extractedData = JSON.parse(jsonMatch[0]);
-        // console.log("genai.ts: Dados JSON parseados:", extractedData);
       } else {
         console.warn("genai.ts: Nenhum array JSON encontrado na resposta da Gemini para o processamento da imagem.");
         toast({title:"Aviso da IA", description:"Não consegui encontrar um formato de dados esperado na análise da imagem.", variant:"default"});
@@ -127,7 +116,6 @@ export async function extractTransactionsFromImage(
     } catch (parseError) {
       console.error("genai.ts: Erro ao parsear JSON da resposta da Gemini (imagem):", parseError, "Resposta bruta:", textResponse);
       toast({title:"Erro de Interpretação (IA)", description:"Houve um problema ao interpretar os dados do extrato. Tente uma imagem mais nítida ou com formato mais simples.", variant:"destructive"});
-      // Não lançar erro aqui, retornar array vazio ou o que foi possível parsear parcialmente se desejado
     }
     return extractedData;
 
@@ -137,5 +125,4 @@ export async function extractTransactionsFromImage(
   }
 }
 
-// Exporta o cliente e os modelos para uso em outros componentes
 export { genai, textGenerativeModel, multimodalGenerativeModel };

@@ -1,7 +1,6 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Para o deploy na Vercel, certifique-se de configurar estas variáveis de ambiente
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
