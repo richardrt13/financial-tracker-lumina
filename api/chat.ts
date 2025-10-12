@@ -13,7 +13,7 @@ const redis = new Redis({
 });
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const generationModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' }); 
+const generationModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
 
 // --- TIPOS E INTERFACES ---
 interface QueryParams {
@@ -51,18 +51,17 @@ export default async function handler(req: Request) {
 
       Instruções:
       1. Determine o 'query_type':
-         - Use 'filter' se a pergunta puder ser respondida com filtros exatos (tipo, categoria, mês, ano). Ex: "quanto gastei com comida em junho?".
-         - Use 'semantic' se a pergunta for aberta ou baseada em descrições vagas. Ex: "quais foram minhas compras em lojas de fast food?".
-         - Use 'general' para saudações, perguntas gerais que não envolvem dados de transações ou perguntas que você não entende. Ex: "Olá, tudo bem?", "qual a cotação do dólar?".
-      2. Preencha o campo 'filters' com os valores extraídos da pergunta. Os valores possíveis para 'type' são "receita" ou "despesa".
-      3. Se 'query_type' for 'semantic', preencha o campo 'semantic_search_term' com o texto que deve ser usado na busca por similaridade.
-      4. Se um período de tempo não for especificado (ex: "esse mês", "ano passado"), use a data atual como referência.
-      5. Retorne APENAS o objeto JSON, sem nenhum texto adicional.
+         - Use 'filter' se a pergunta puder ser respondida com filtros exatos (tipo, categoria, mês, ano).
+         - Use 'semantic' se a pergunta for aberta ou baseada em descrições vagas.
+         - Use 'general' para saudações ou perguntas que não envolvem dados de transações.
+      2. Preencha o campo 'filters' com os valores extraídos. Para 'category', extraia o termo geral que o usuário mencionou (ex: para "gastos com cartão de crédito", extraia "cartão").
+      3. Se 'query_type' for 'semantic', preencha 'semantic_search_term'.
+      4. Se um período de tempo não for especificado, use a data atual como referência.
+      5. Retorne APENAS o objeto JSON.
 
       Exemplos:
-      - Pergunta: "quanto ganhei de salário esse mês?" -> {"query_type": "filter", "filters": {"type": "receita", "category": "Salário", "month": "Outubro", "year": "2025"}}
+      - Pergunta: "quanto gastei com cartão esse ano?" -> {"query_type": "filter", "filters": {"type": "despesa", "category": "Cartão", "year": "2025"}}
       - Pergunta: "mostre meus gastos com almoços no ifood" -> {"query_type": "semantic", "semantic_search_term": "almoço no ifood", "filters": {"type": "despesa"}}
-      - Pergunta: "quais transações eu já fiz?" -> {"query_type": "filter", "filters": {}}
       - Pergunta: "oi, quem é você?" -> {"query_type": "general"}
 
       ---
@@ -70,11 +69,9 @@ export default async function handler(req: Request) {
     `;
 
     const analystResult = await generationModel.generateContent(analystPrompt);
-    // Limpa a resposta do modelo para garantir que seja um JSON válido
     const cleanedJsonString = analystResult.response.text().replace(/```json|```/g, '').trim();
     const queryParams: QueryParams = JSON.parse(cleanedJsonString);
     console.log("Parâmetros da Consulta Extraídos:", queryParams);
-
 
     // --- ETAPA 2: BUSCA DE DADOS (As "Ferramentas") ---
     let foundTransactions: any[] | null = null;
@@ -83,15 +80,25 @@ export default async function handler(req: Request) {
       let query = supabaseAdmin.from('transactions').select('*');
       const filters = queryParams.filters || {};
       if (filters.type) query = query.eq('type', filters.type);
-      if (filters.category) query = query.eq('category', filters.category);
       if (filters.month) query = query.eq('month', filters.month);
       if (filters.year) query = query.eq('year', filters.year);
+
+      // --- MUDANÇA PRINCIPAL AQUI ---
+      // Se houver um filtro de categoria, usamos 'ilike' para uma busca flexível.
+      // 'ilike' é case-insensitive (ignora maiúsculas/minúsculas).
+      // '%${filters.category}%' significa "qualquer texto, seguido pelo termo da categoria, seguido por qualquer texto".
+      // Isso vai encontrar "Cartão Inter" e "Cartão C6" quando o filtro for "Cartão".
+      if (filters.category) {
+        query = query.ilike('category', `%${filters.category}%`);
+      }
+      // -----------------------------
       
-      const { data, error } = await query.limit(50); // Limita para não sobrecarregar
+      const { data, error } = await query.limit(50);
       if (error) throw new Error(`Erro na busca com filtros: ${error.message}`);
       foundTransactions = data;
 
     } else if (queryParams.query_type === 'semantic' && queryParams.semantic_search_term) {
+      // (A lógica da busca semântica permanece a mesma)
       const { data: embeddingData, error: embeddingError } = await supabaseAdmin.functions.invoke(
         'generate-embedding', { body: { input: queryParams.semantic_search_term } }
       );
@@ -99,7 +106,7 @@ export default async function handler(req: Request) {
       
       const { data, error: rpcError } = await supabaseAdmin.rpc('search_transactions', {
           query_embedding: embeddingData.embedding,
-          similarity_threshold: 0.3, // Limiar ajustado para busca semântica
+          similarity_threshold: 0.3,
           match_count: 10,
         }
       );
@@ -125,8 +132,8 @@ export default async function handler(req: Request) {
       **INSTRUÇÕES:**
       - Baseie sua resposta EXCLUSIVAMENTE nos "Dados Relevantes Encontrados".
       - Se a lista de dados estiver vazia, informe educadamente que não encontrou as informações solicitadas.
-      - Se a pergunta for geral (saudações, etc.) e não houver dados, responda de forma apropriada sem mencionar as transações.
-      - Realize cálculos como somas ou médias se a pergunta do usuário pedir.
+      - Se a pergunta for geral, responda de forma apropriada sem mencionar transações.
+      - Realize cálculos como somas se a pergunta pedir.
       - Responda sempre em português do Brasil.
 
       ---
