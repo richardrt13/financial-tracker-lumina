@@ -49,7 +49,7 @@ export default async function handler(req: Request) {
       'search_transactions',
       {
         query_embedding: queryEmbedding,
-        similarity_threshold: 0.7, // Limiar de similaridade
+        similarity_threshold: 0.2, // Limiar de similaridade
         match_count: 10,           // Quantidade de resultados
       }
     );
