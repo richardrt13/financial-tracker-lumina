@@ -13,7 +13,7 @@ const redis = new Redis({
 });
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const generationModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
+const generationModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
 
 // --- TIPOS E INTERFACES ---
 interface QueryParams {
