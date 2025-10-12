@@ -15,113 +15,138 @@ const redis = new Redis({
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 const generationModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
 
-// --- TIPOS E INTERFACES ---
-interface QueryParams {
-  query_type: 'filter' | 'semantic' | 'analysis' | 'general';
-  filters?: {
-    type?: 'receita' | 'despesa';
-    category?: string;
-    month?: string;
-    year?: string;
-  };
-  semantic_search_term?: string;
+// =================================================================
+// --- ETAPA 1: DEFINIÇÃO DAS FERRAMENTAS (Tools) ---
+// Cada ferramenta é uma função que executa uma tarefa específica e confiável.
+// =================================================================
+
+/**
+ * Busca transações com base em filtros precisos.
+ */
+async function tool_fetchTransactions(filters: any) {
+  const COLUMNS_TO_SELECT = 'id, amount, type, category, month, year, description, created_at';
+  let query = supabaseAdmin.from('transactions').select(COLUMNS_TO_SELECT);
+  if (filters.type) query = query.eq('type', filters.type);
+  if (filters.month) query = query.eq('month', filters.month);
+  if (filters.year) query = query.eq('year', filters.year);
+  if (filters.category) query = query.ilike('category', `%${filters.category}%`);
+  const { data, error } = await query.limit(500);
+  if (error) throw new Error(`Erro na busca com filtros: ${error.message}`);
+  return data;
 }
+
+/**
+ * Calcula o tempo necessário para atingir uma meta de economia.
+ */
+async function tool_calculateSavingsGoal(goal_amount: number) {
+  const { data: allTransactions, error } = await supabaseAdmin.from('transactions').select('amount, type, month, year');
+  if (error) throw new Error(`Erro ao buscar todas as transações: ${error.message}`);
+  
+  const monthlySummary: { [key: string]: { receita: number; despesa: number } } = {};
+  for (const t of allTransactions!) {
+    const key = `${t.year}-${t.month}`;
+    if (!monthlySummary[key]) monthlySummary[key] = { receita: 0, despesa: 0 };
+    if (t.type === 'receita') monthlySummary[key].receita += t.amount;
+    else if (t.type === 'despesa') monthlySummary[key].despesa += t.amount;
+  }
+
+  const months = Object.keys(monthlySummary);
+  if (months.length === 0) return { error: "Não há dados suficientes para calcular a média." };
+  
+  const totalIncome = months.reduce((acc, key) => acc + monthlySummary[key].receita, 0);
+  const totalExpense = months.reduce((acc, key) => acc + monthlySummary[key].despesa, 0);
+  
+  const averageMonthlyIncome = totalIncome / months.length;
+  const averageMonthlyExpense = totalExpense / months.length;
+  const averageMonthlySavings = averageMonthlyIncome - averageMonthlyExpense;
+
+  if (averageMonthlySavings <= 0) {
+    return { error: "Sua média de gastos é maior ou igual à sua média de receitas. Não é possível juntar dinheiro com essa média." };
+  }
+
+  const monthsToReachGoal = Math.ceil(goal_amount / averageMonthlySavings);
+  return {
+    goalAmount: goal_amount,
+    averageMonthlyIncome,
+    averageMonthlyExpense,
+    averageMonthlySavings,
+    monthsToReachGoal,
+    yearsToReachGoal: parseFloat((monthsToReachGoal / 12).toFixed(1)),
+  };
+}
+
 
 // --- FUNÇÃO PRINCIPAL DA API ---
 export default async function handler(req: Request) {
-  if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Método não permitido' }), {
-      status: 405, headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
   try {
     const { userId, message } = await req.json();
-    if (!userId || !message) {
-      throw new Error('userId e message são obrigatórios.');
-    }
+    if (!userId || !message) throw new Error('userId e message são obrigatórios.');
 
     const historyKey = `chat_history:${userId}`;
 
-    // --- ETAPA 1: LLM ANALISTA (COM CORREÇÃO DE IDIOMA) ---
+    // --- ETAPA 2: LLM ORQUESTRADOR - Decide qual ferramenta usar ---
     const rawHistoryForAnalyst = await redis.lrange(historyKey, 0, 5);
     const conversationHistoryForAnalyst = rawHistoryForAnalyst.reverse().join('\n');
 
-    const currentDate = new Date().toLocaleDateString('pt-BR', { year: 'numeric', month: 'long', day: 'numeric' });
-    const analystPrompt = `
-      Você é um sistema especialista que analisa a pergunta de um usuário sobre finanças e a converte em um objeto JSON para consulta.
-      A data atual é ${currentDate}.
+    const orchestratorPrompt = `
+      Você é um orquestrador de IA que analisa uma pergunta do usuário e decide qual ferramenta usar para respondê-la.
 
-      **Instruções Críticas:**
-      1.  **IDIOMA DO MÊS:** Ao extrair um mês, use sempre o nome completo e em **PORTUGUÊS** (ex: "Janeiro", "Fevereiro", "Outubro"). Esta regra é fundamental.
-      2.  **PRIORIZE A PERGUNTA ATUAL:** Use o histórico da conversa apenas para resolver ambiguidades em perguntas curtas. Se a pergunta atual for completa, foque nela.
-      3.  **Analisar 'type':** Inferir "despesa" ou "receita". 'type' só pode ter um desses dois valores.
-      4.  **Analisar 'category':** É o substantivo principal da transação (ex: "cartão", "alimentação", "salário").
-      5.  **Analisar 'query_type':**
-          - 'filter': para listas de transações.
-          - 'analysis': para cálculos ou comparações (total, média, maior/menor).
-          - 'semantic': para buscas abertas baseadas em descrições.
-          - 'general': para saudações ou perguntas que não se referem a transações.
-      6.  **Formato de Saída:** Retorne APENAS o objeto JSON.
+      **Ferramentas Disponíveis:**
+      - **fetchTransactions**: Use para perguntas que pedem uma lista de transações ou um cálculo simples sobre um subconjunto de dados (ex: "quanto gastei com comida em abril?"). Argumentos: \`filters\` (com type, category, month, year).
+      - **calculateSavingsGoal**: Use para perguntas complexas sobre projeções e metas financeiras que requerem uma análise completa de receitas e despesas (ex: "em quanto tempo junto X?"). Argumentos: \`goal_amount\`.
+      - **generalConversation**: Use para saudações, perguntas gerais ou quando nenhuma outra ferramenta se aplica. Argumentos: nenhum.
+      
+      **Instruções:**
+      1. Analise o histórico e a pergunta do usuário.
+      2. Escolha a ferramenta MAIS ADEQUADA.
+      3. Extraia os argumentos necessários para a ferramenta.
+      4. Retorne APENAS um objeto JSON com 'tool_name' e 'arguments'.
 
-      **Exemplos Chave:**
-      - Pergunta: "quanto gastei com alimentação nesse mês?" -> {"query_type":"analysis","filters":{"type":"despesa","category":"Alimentação","month":"Outubro","year":"2025"}}
-      - Pergunta: "e em janeiro?" -> {"query_type":"analysis","filters":{"type":"despesa","category":"Alimentação","month":"Janeiro","year":"2025"}}
+      **Exemplos:**
+      - Pergunta: "quanto gastei com cartão esse ano?" -> {"tool_name":"fetchTransactions","arguments":{"filters":{"type":"despesa","category":"Cartão","year":"2025"}}}
+      - Pergunta: "em quanto tempo consigo juntar 100 mil?" -> {"tool_name":"calculateSavingsGoal","arguments":{"goal_amount":100000}}
+      - Pergunta: "oi, tudo bem?" -> {"tool_name":"generalConversation","arguments":{}}
 
       ---
-      **Histórico da Conversa Recente:**
+      **Histórico da Conversa:**
       ${conversationHistoryForAnalyst || "Nenhuma."}
       ---
-      **Pergunta do Usuário a ser Analisada:** "${message}"
+      **Pergunta do Usuário:** "${message}"
     `;
 
-    const analystResult = await generationModel.generateContent(analystPrompt);
-    const cleanedJsonString = analystResult.response.text().replace(/```json|```/g, '').trim();
-    const queryParams: QueryParams = JSON.parse(cleanedJsonString);
-    console.log("Parâmetros da Consulta Extraídos:", queryParams);
+    const orchestratorResult = await generationModel.generateContent(orchestratorPrompt);
+    const toolCall = JSON.parse(orchestratorResult.response.text().replace(/```json|```/g, '').trim());
+    console.log("Decisão do Orquestrador:", toolCall);
 
-    // --- ETAPA 2: BUSCA DE DADOS ---
-    let foundTransactions: any[] | null = null;
-    const COLUMNS_TO_SELECT = 'id, amount, type, category, month, year, description, created_at';
-
-    if ((queryParams.query_type === 'filter' || queryParams.query_type === 'analysis') && queryParams.filters) {
-      let query = supabaseAdmin.from('transactions').select(COLUMNS_TO_SELECT);
-      const filters = queryParams.filters;
-      if (filters.type) query = query.eq('type', filters.type);
-      if (filters.month) query = query.eq('month', filters.month);
-      if (filters.year) query = query.eq('year', filters.year);
-      if (filters.category) {
-        query = query.ilike('category', `%${filters.category}%`);
-      }
-      const { data, error } = await query.limit(100);
-      if (error) throw new Error(`Erro na busca com filtros: ${error.message}`);
-      foundTransactions = data;
-    } else if (queryParams.query_type === 'semantic' && queryParams.semantic_search_term) {
-       // Lógica da busca semântica
+    // --- ETAPA 3: DISPATCHER E EXECUÇÃO DA FERRAMENTA ---
+    let toolResult: any = null;
+    if (toolCall.tool_name === 'fetchTransactions') {
+      toolResult = await tool_fetchTransactions(toolCall.arguments.filters);
+    } else if (toolCall.tool_name === 'calculateSavingsGoal') {
+      toolResult = await tool_calculateSavingsGoal(toolCall.arguments.goal_amount);
+    } else {
+      toolResult = "Nenhuma ferramenta necessária.";
     }
+    console.log("Resultado da Ferramenta:", toolResult);
 
-    console.log("Transações Encontradas (sem embedding):", foundTransactions);
-
-    // --- ETAPA 3: LLM APRESENTADOR ---
+    // --- ETAPA 4: LLM APRESENTADOR ---
     const fullHistoryForPresenter = await redis.lrange(historyKey, 0, 9);
     const presenterConversationHistory = fullHistoryForPresenter.reverse().join('\n');
 
     const presenterPrompt = `
-      **Persona:** Você é "Spendly", um especialista financeiro humano, amigável e extremamente competente. Sua comunicação é clara, direta e proativa.
+      **Persona:** Você é "Spendly", um especialista financeiro humano, amigável e competente.
+      **Tarefa:** Sua tarefa é pegar o resultado de uma ferramenta interna e apresentá-lo ao usuário de forma clara e conversacional.
 
       **Contexto:**
       - Histórico da Conversa: ${presenterConversationHistory || "Nenhuma."}
-      - Pergunta do Usuário: "${message}"
-      - Dados Encontrados: ${foundTransactions ? JSON.stringify(foundTransactions, null, 2) : "Nenhuma transação encontrada."}
+      - Pergunta Original do Usuário: "${message}"
+      - Resultado da Ferramenta Interna: ${JSON.stringify(toolResult, null, 2)}
 
-      **Regras de Comportamento e Resposta:**
-      1.  **Tom:** Natural e prestativo. Leve em consideração o histórico de conversas com o usuário varie suas saudações e frases.
-      2.  **Introdução:** Apresente-se apenas na primeira mensagem da conversa.
-      3.  **Proatividade e Detalhe:** Ao responder uma pergunta de análise (soma, etc.), SEMPRE forneça o resultado principal e, se apropriado, detalhe os valores que o compõem.
-      4.  **Precisão:** Baseie-se ESTRITAMENTE nos "Dados Encontrados".
-      5.  **Dados Vazios:** Se não encontrar dados, informe de forma útil (ex: "Não encontrei registros de despesas com 'alimentação' em outubro...").
-      6.  **Feedback:** Se o usuário der feedback, confirme que entendeu ("Entendido.") e siga a nova instrução.
-
+      **Regras:**
+      1.  Traduza o JSON do "Resultado da Ferramenta" em uma resposta humana e útil.
+      2.  Se o resultado for uma lista, resuma os dados. Se for um cálculo, explique o resultado.
+      3.  Mantenha o tom natural e seja proativo.
+      
       ---
       **Sua Resposta:**
     `;
@@ -129,7 +154,7 @@ export default async function handler(req: Request) {
     const presenterResult = await generationModel.generateContent(presenterPrompt);
     const aiResponse = presenterResult.response.text();
 
-    // --- ETAPA 4: ATUALIZAR MEMÓRIA ---
+    // --- ETAPA 5: ATUALIZAR MEMÓRIA ---
     await redis.lpush(historyKey, `Usuário: ${message}`);
     await redis.lpush(historyKey, `Assistente: ${aiResponse}`);
     await redis.ltrim(historyKey, 0, 19);
