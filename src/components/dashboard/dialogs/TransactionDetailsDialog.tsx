@@ -1,11 +1,15 @@
-// /components/dashboard/dialogs/TransactionDetailsDialog.tsx
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Transaction } from "../types";
-import { TransactionList } from "../ui/TransactionList";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { TransactionList } from '../ui/TransactionList';
+import { Transaction } from '../types';
 
 interface TransactionDetailsDialogProps {
   isOpen: boolean;
-  onOpenChange: (open: boolean) => void;
+  onOpenChange: (isOpen: boolean) => void;
   selectedType: string | null;
   transactions: Transaction[];
   selectedMonth: string;
@@ -14,7 +18,14 @@ interface TransactionDetailsDialogProps {
   onDeleteClick: (transaction: Transaction) => void;
   onToggleStatus: (transaction: Transaction) => void;
   isProcessing: boolean;
+  valuesVisible: boolean; 
 }
+
+const typeToTitle: { [key: string]: string } = {
+  receita: 'Receitas',
+  despesa: 'Despesas',
+  investimento: 'Investimentos',
+};
 
 export function TransactionDetailsDialog({
   isOpen,
@@ -26,39 +37,30 @@ export function TransactionDetailsDialog({
   onEditClick,
   onDeleteClick,
   onToggleStatus,
-  isProcessing
+  isProcessing,
+  valuesVisible, 
 }: TransactionDetailsDialogProps) {
-  const getTitle = (type: string | null) => {
-    if (type === 'receita') return 'Receitas';
-    if (type === 'despesa') return 'Despesas';
-    if (type === 'investimento') return 'Investimentos';
-    return '';
-  };
+
+  const title = selectedType ? typeToTitle[selectedType] : '';
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle className="text-xl font-semibold">
-            Detalhes das {getTitle(selectedType)}
-            <span className="text-gray-500 text-sm ml-2">
-              {selectedMonth === "Todos os Meses" ? selectedYear : `${selectedMonth} / ${selectedYear}`}
-            </span>
-          </DialogTitle>
+          <DialogTitle>{title} de {selectedMonth} de {selectedYear}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 max-h-[70vh] overflow-y-auto">
-          {transactions && transactions.length > 0 ? (
+        <div className="flex-grow overflow-y-auto pr-3">
+          {transactions.length > 0 ? (
             <TransactionList
               transactions={transactions}
               onEditClick={onEditClick}
               onDeleteClick={onDeleteClick}
               onToggleStatus={onToggleStatus}
               isProcessing={isProcessing}
+              valuesVisible={valuesVisible} 
             />
           ) : (
-            <div className="text-center py-8 text-gray-500">
-              <p>Nenhuma {getTitle(selectedType).toLowerCase()} registrada para este período.</p>
-            </div>
+            <p className="text-center text-gray-500 py-8">Nenhuma transação encontrada.</p>
           )}
         </div>
       </DialogContent>
