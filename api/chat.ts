@@ -14,7 +14,7 @@ const redis = new Redis({
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 const generationModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-const embeddingModel = genAI.getGenerativeModel({ model: 'embedding-001' });
+const embeddingModel = genAI.getGenerativeModel({ model: 'gemini-embedding-001' });
 
 // --- FUNÇÃO PRINCIPAL DA API ---
 export default async function handler(req: Request) {
