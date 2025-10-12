@@ -14,7 +14,7 @@ const redis = new Redis({
 });
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const generationModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+const generationModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
 // --- FUNÇÃO PRINCIPAL DA API ---
 export default async function handler(req: Request) {
@@ -39,7 +39,7 @@ export default async function handler(req: Request) {
     
     // 1.1 Invocar a Edge Function 'generate-embedding' usando fetch
     const supabaseUrl = process.env.VITE_SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
 
     if (!supabaseUrl || !supabaseServiceKey) {
         throw new Error('Variáveis de ambiente do Supabase não encontradas.');
