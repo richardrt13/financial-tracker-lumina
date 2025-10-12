@@ -13,7 +13,7 @@ const redis = new Redis({
 });
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const generationModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+const generationModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
 
 // --- FUNÇÃO PRINCIPAL DA API ---
 export default async function handler(req: Request) {
