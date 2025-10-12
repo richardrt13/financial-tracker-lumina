@@ -51,18 +51,13 @@ export default async function handler(req: Request) {
 
       Instruções:
       1. Determine o 'query_type':
-         - Use 'filter' se a pergunta puder ser respondida com filtros exatos (tipo, categoria, mês, ano).
-         - Use 'semantic' se a pergunta for aberta ou baseada em descrições vagas.
+         - Use 'filter' para perguntas com filtros exatos (tipo, categoria, mês, ano).
+         - Use 'semantic' para perguntas abertas ou baseadas em descrições vagas.
          - Use 'general' para saudações ou perguntas que não envolvem dados de transações.
-      2. Preencha o campo 'filters' com os valores extraídos. Para 'category', extraia o termo geral que o usuário mencionou (ex: para "gastos com cartão de crédito", extraia "cartão").
+      2. Preencha 'filters' com os valores extraídos. Para 'category', extraia o termo geral.
       3. Se 'query_type' for 'semantic', preencha 'semantic_search_term'.
       4. Se um período de tempo não for especificado, use a data atual como referência.
       5. Retorne APENAS o objeto JSON.
-
-      Exemplos:
-      - Pergunta: "quanto gastei com cartão esse ano?" -> {"query_type": "filter", "filters": {"type": "despesa", "category": "Cartão", "year": "2025"}}
-      - Pergunta: "mostre meus gastos com almoços no ifood" -> {"query_type": "semantic", "semantic_search_term": "almoço no ifood", "filters": {"type": "despesa"}}
-      - Pergunta: "oi, quem é você?" -> {"query_type": "general"}
 
       ---
       Pergunta do Usuário: "${message}"
@@ -73,32 +68,34 @@ export default async function handler(req: Request) {
     const queryParams: QueryParams = JSON.parse(cleanedJsonString);
     console.log("Parâmetros da Consulta Extraídos:", queryParams);
 
-    // --- ETAPA 2: BUSCA DE DADOS (As "Ferramentas") ---
+    // --- ETAPA 2: BUSCA DE DADOS (As "Ferentas") ---
     let foundTransactions: any[] | null = null;
     
+    // --- MUDANÇA PRINCIPAL AQUI ---
+    // Definimos as colunas que são úteis para o LLM. A coluna 'embedding' foi removida.
+    const COLUMNS_TO_SELECT = 'id, amount, type, category, month, year, description, created_at';
+    // -----------------------------
+
     if (queryParams.query_type === 'filter') {
-      let query = supabaseAdmin.from('transactions').select('*');
+      let query = supabaseAdmin.from('transactions').select(COLUMNS_TO_SELECT);
       const filters = queryParams.filters || {};
       if (filters.type) query = query.eq('type', filters.type);
       if (filters.month) query = query.eq('month', filters.month);
       if (filters.year) query = query.eq('year', filters.year);
-
-      // --- MUDANÇA PRINCIPAL AQUI ---
-      // Se houver um filtro de categoria, usamos 'ilike' para uma busca flexível.
-      // 'ilike' é case-insensitive (ignora maiúsculas/minúsculas).
-      // '%${filters.category}%' significa "qualquer texto, seguido pelo termo da categoria, seguido por qualquer texto".
-      // Isso vai encontrar "Cartão Inter" e "Cartão C6" quando o filtro for "Cartão".
       if (filters.category) {
         query = query.ilike('category', `%${filters.category}%`);
       }
-      // -----------------------------
       
       const { data, error } = await query.limit(50);
       if (error) throw new Error(`Erro na busca com filtros: ${error.message}`);
       foundTransactions = data;
 
     } else if (queryParams.query_type === 'semantic' && queryParams.semantic_search_term) {
-      // (A lógica da busca semântica permanece a mesma)
+      // A busca semântica ainda usa o embedding, mas o resultado da função RPC
+      // também não precisa retornar o vetor de embedding.
+      // Assumindo que sua função `search_transactions` já não retorna o embedding,
+      // não há nada para mudar aqui. Se ela retorna, o ideal seria modificá-la
+      // para que ela também retorne apenas as colunas úteis.
       const { data: embeddingData, error: embeddingError } = await supabaseAdmin.functions.invoke(
         'generate-embedding', { body: { input: queryParams.semantic_search_term } }
       );
@@ -107,21 +104,22 @@ export default async function handler(req: Request) {
       const { data, error: rpcError } = await supabaseAdmin.rpc('search_transactions', {
           query_embedding: embeddingData.embedding,
           similarity_threshold: 0.3,
-          match_count: 10,
+          match_count: 100,
         }
       );
       if (rpcError) throw new Error(`Erro na busca semântica: ${rpcError.message}`);
+      // O log abaixo agora mostrará objetos sem a chave 'embedding'
       foundTransactions = data;
     }
 
-    console.log("Transações Encontradas:", foundTransactions);
+    console.log("Transações Encontradas (sem embedding):", foundTransactions);
 
-    // --- ETAPA 3: LLM APRESENTADOR - Gerar a resposta final ---
+    // --- ETAPA 3: LLM APRESENTADOR ---
     const rawHistory = await redis.lrange(historyKey, 0, 9);
     const conversationHistory = rawHistory.reverse().join('\n');
 
     const presenterPrompt = `
-      Você é "Spendly", um assistente financeiro especialista. Sua tarefa é responder à pergunta do usuário de forma clara, amigável e direta, usando as informações fornecidas.
+      Você é "Spendly", um assistente financeiro especialista. Responda à pergunta do usuário de forma clara, amigável e direta, usando as informações fornecidas.
 
       **Histórico da Conversa Anterior:**
       ${conversationHistory || "Nenhum."}
@@ -131,7 +129,7 @@ export default async function handler(req: Request) {
 
       **INSTRUÇÕES:**
       - Baseie sua resposta EXCLUSIVAMENTE nos "Dados Relevantes Encontrados".
-      - Se a lista de dados estiver vazia, informe educadamente que não encontrou as informações solicitadas.
+      - Se a lista de dados estiver vazia, informe que não encontrou as informações.
       - Se a pergunta for geral, responda de forma apropriada sem mencionar transações.
       - Realize cálculos como somas se a pergunta pedir.
       - Responda sempre em português do Brasil.
@@ -144,7 +142,7 @@ export default async function handler(req: Request) {
     const presenterResult = await generationModel.generateContent(presenterPrompt);
     const aiResponse = presenterResult.response.text();
 
-    // --- ETAPA 4: ATUALIZAR MEMÓRIA (Redis) ---
+    // --- ETAPA 4: ATUALIZAR MEMÓRIA ---
     await redis.lpush(historyKey, `Usuário: ${message}`);
     await redis.lpush(historyKey, `Assistente: ${aiResponse}`);
     await redis.ltrim(historyKey, 0, 19);
