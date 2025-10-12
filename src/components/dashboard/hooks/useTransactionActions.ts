@@ -80,6 +80,7 @@ export const useTransactionActions = (userId: string | null, budgetId: string, f
       const { error } = await supabase.from('transactions').update(updateData).eq('id', transaction.id).eq('user_id', userId).eq('budget_id', budgetId);
       if (error) throw error;
       toast({ title: "Sucesso", description: `Transação marcada como ${newStatus ? 'concluída' : 'pendente'}!` });
+      supabase.functions.invoke('process-queue').catch(console.error);
       await fetchData();
     } catch (err: any) {
       toast({ title: "Erro", description: (err as Error).message || "Falha ao atualizar status.", variant: "destructive" });
