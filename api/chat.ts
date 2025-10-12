@@ -43,24 +43,37 @@ export default async function handler(req: Request) {
 
     const historyKey = `chat_history:${userId}`;
 
-    // --- ETAPA 1: LLM ANALISTA - Extrair a intenção do usuário ---
+    // --- ETAPA 1: LLM ANALISTA (COM PROMPT MELHORADO) ---
     const currentDate = new Date().toLocaleDateString('pt-BR', { year: 'numeric', month: 'long', day: 'numeric' });
     const analystPrompt = `
-      Você é um sistema inteligente que analisa a pergunta de um usuário sobre suas finanças e a converte em um objeto JSON.
+      Você é um sistema especialista em analisar perguntas sobre finanças e convertê-las em um objeto JSON estruturado para consulta.
       A data atual é ${currentDate}.
 
-      Instruções:
-      1. Determine o 'query_type':
-         - Use 'filter' para perguntas com filtros exatos (tipo, categoria, mês, ano).
-         - Use 'semantic' para perguntas abertas ou baseadas em descrições vagas.
-         - Use 'general' para saudações ou perguntas que não envolvem dados de transações.
-      2. Preencha 'filters' com os valores extraídos. Para 'category', extraia o termo geral.
-      3. Se 'query_type' for 'semantic', preencha 'semantic_search_term'.
-      4. Se um período de tempo não for especificado, use a data atual como referência.
-      5. Retorne APENAS o objeto JSON.
+      **Instruções Detalhadas:**
+      1.  **Analisar o 'type' da Transação:**
+          - Verbos como "gastei", "paguei", "comprei" ou a palavra "despesa" significam que o type é "despesa".
+          - Verbos como "ganhei", "recebi" ou as palavras "salário", "receita" significam que o type é "receita".
+          - **IMPORTANTE: O campo 'type' SÓ PODE ter um de dois valores: "receita" ou "despesa".** Se não for possível determinar, deixe nulo.
+
+      2.  **Analisar a 'category':**
+          - A categoria é o substantivo principal ao qual o gasto ou receita se refere. Na frase "quanto gastei com cartão", a categoria é "Cartão".
+
+      3.  **Analisar o 'query_type':**
+          - Use 'filter' para perguntas que podem ser respondidas com filtros exatos (tipo, categoria, mês, ano).
+          - Use 'semantic' para perguntas abertas ou baseadas em descrições vagas (ex: "compras em lojas de fast food").
+          - Use 'general' para saudações ou perguntas que não se referem a dados de transações.
+
+      4.  **Montar o JSON:** Preencha os campos 'filters' com os valores extraídos. Se um período de tempo não for especificado (ex: "esse mês"), use a data atual como referência.
+
+      5.  **Formato de Saída:** Retorne APENAS o objeto JSON, sem nenhum texto, explicação ou markdown.
+
+      **Exemplos Chave:**
+      - Pergunta: "quanto gastei com cartão nesse ano?" -> {"query_type":"filter","filters":{"type":"despesa","category":"Cartão","year":"2025"}}
+      - Pergunta: "quais foram minhas receitas de salário em Abril?" -> {"query_type":"filter","filters":{"type":"receita","category":"Salário","month":"Abril"}}
+      - Pergunta: "oi, tudo bem?" -> {"query_type":"general"}
 
       ---
-      Pergunta do Usuário: "${message}"
+      **Pergunta do Usuário a ser Analisada:** "${message}"
     `;
 
     const analystResult = await generationModel.generateContent(analystPrompt);
@@ -68,17 +81,14 @@ export default async function handler(req: Request) {
     const queryParams: QueryParams = JSON.parse(cleanedJsonString);
     console.log("Parâmetros da Consulta Extraídos:", queryParams);
 
-    // --- ETAPA 2: BUSCA DE DADOS (As "Ferentas") ---
-    let foundTransactions: any[] | null = null;
-    
-    // --- MUDANÇA PRINCIPAL AQUI ---
-    // Definimos as colunas que são úteis para o LLM. A coluna 'embedding' foi removida.
-    const COLUMNS_TO_SELECT = 'id, amount, type, category, month, year, description, created_at';
-    // -----------------------------
 
-    if (queryParams.query_type === 'filter') {
+    // --- ETAPA 2: BUSCA DE DADOS ---
+    let foundTransactions: any[] | null = null;
+    const COLUMNS_TO_SELECT = 'id, amount, type, category, month, year, description, created_at';
+    
+    if (queryParams.query_type === 'filter' && queryParams.filters) {
       let query = supabaseAdmin.from('transactions').select(COLUMNS_TO_SELECT);
-      const filters = queryParams.filters || {};
+      const filters = queryParams.filters;
       if (filters.type) query = query.eq('type', filters.type);
       if (filters.month) query = query.eq('month', filters.month);
       if (filters.year) query = query.eq('year', filters.year);
@@ -91,11 +101,6 @@ export default async function handler(req: Request) {
       foundTransactions = data;
 
     } else if (queryParams.query_type === 'semantic' && queryParams.semantic_search_term) {
-      // A busca semântica ainda usa o embedding, mas o resultado da função RPC
-      // também não precisa retornar o vetor de embedding.
-      // Assumindo que sua função `search_transactions` já não retorna o embedding,
-      // não há nada para mudar aqui. Se ela retorna, o ideal seria modificá-la
-      // para que ela também retorne apenas as colunas úteis.
       const { data: embeddingData, error: embeddingError } = await supabaseAdmin.functions.invoke(
         'generate-embedding', { body: { input: queryParams.semantic_search_term } }
       );
@@ -108,7 +113,6 @@ export default async function handler(req: Request) {
         }
       );
       if (rpcError) throw new Error(`Erro na busca semântica: ${rpcError.message}`);
-      // O log abaixo agora mostrará objetos sem a chave 'embedding'
       foundTransactions = data;
     }
 
@@ -129,7 +133,7 @@ export default async function handler(req: Request) {
 
       **INSTRUÇÕES:**
       - Baseie sua resposta EXCLUSIVAMENTE nos "Dados Relevantes Encontrados".
-      - Se a lista de dados estiver vazia, informe que não encontrou as informações.
+      - Se a lista de dados estiver vazia, informe educadamente que não encontrou as informações solicitadas.
       - Se a pergunta for geral, responda de forma apropriada sem mencionar transações.
       - Realize cálculos como somas se a pergunta pedir.
       - Responda sempre em português do Brasil.
