@@ -13,7 +13,7 @@ const redis = new Redis({
 });
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const generationModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
+const generationModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
 // =================================================================
 // --- ETAPA 1: DEFINIÇÃO DAS FERRAMENTAS (Tools) ---
