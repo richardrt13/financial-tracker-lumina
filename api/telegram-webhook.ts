@@ -63,7 +63,7 @@ async function sendTelegramMessage(chat_id: number, text: string) {
 }
 
 async function extractTransaction(text: string): Promise<any> {
-  const model = genai.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  const model = genai.getGenerativeModel({ model: 'gemini-2.5-flash' });
   const currentYear = new Date().getFullYear();
   const currentMonthName = months[new Date().getMonth()];
 
