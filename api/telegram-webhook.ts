@@ -102,7 +102,7 @@ function bufferToGenerativePart(buffer: Buffer, mimeType: string): InlineDataPar
 }
 
 async function transcribeAudioWithGemini(audioBuffer: Buffer, mimeType: string): Promise<string> {
-  const model = genai.getGenerativeModel({ model: "gemini-1.5-flash" });
+  const model = genai.getGenerativeModel({ model: "gemini-2.5-flash" });
   const audioPart = bufferToGenerativePart(audioBuffer, mimeType);
   const prompt = "Transcreva este áudio para texto em português. Responda apenas com a transcrição.";
   
