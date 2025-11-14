@@ -30,7 +30,7 @@ export function Insights({ selectedYear, selectedMonth, summaryData, transaction
       };
 
       // Forma correta de chamar a API do Gemini
-      const model = genai.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = genai.getGenerativeModel({ model: "gemini-2.5-flash" });
       
       // Prompt melhorado para respostas mais curtas e assertivas
       const prompt = `
