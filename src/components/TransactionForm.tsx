@@ -172,8 +172,8 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
         category: "",
         amount: 0,
         isRecurring: false,
-        recurringMonths: "1",
-        dueDay: "",
+        recurringMonths: 1, // Pass as number
+        dueDay: null,       // Pass as null (since schema transforms optional string to nullable number, reset should match output type usually or input type depending on RHF version, but let's try matching the inferred output type of boolean/number)
         linked_income_id: null,
         description: "",
       });
@@ -333,6 +333,11 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
             adjustedDueDay = maxDaysForLoopMonth;
           }
         }
+        
+        // Calcular data ISO para nova coluna DATE
+        let dateISO = new Date(currentYearVal, currentMonthIdx, adjustedDueDay || 1).toISOString().split('T')[0];
+        // Se for hoje/passado, talvez queiramos a data atual se dia não especificado? Nao, melhor dia 1.
+        // Se o usuário especificou dueDay, usamos. Se não, usamos dia 1.
 
         transactionsToInsert.push({
           type: values.type,
@@ -341,10 +346,13 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
           description: values.description || null,
           user_id: userId,
           budget_id: budgetId,
-          is_completed: false,
+          // Adaptação para o novo Status
+          status: 'pending', // Transações criadas manualmente no form iniciam como pendentes/planejadas
+          is_completed: false, // Mantido para compatibilidade até migração total
           due_day: adjustedDueDay,
           year: String(currentYearVal),
           month: months[currentMonthIdx],
+          date: dateISO, // Nova coluna DATE
           linked_income_id: (values.type === 'despesa' || values.type === 'investimento') && values.linked_income_id ? values.linked_income_id : null,
         });
 
@@ -372,10 +380,10 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
         category: "", 
         amount: 0, 
         isRecurring: false, 
-        recurringMonths: "1",
-        dueDay: "", 
-        linked_income_id: null, 
-        description: ""
+        recurringMonths: 1, // Pass as number
+        dueDay: null,       // Pass as null
+        linked_income_id: null,
+        description: "",
       });
       setCurrentType("receita"); 
       setCurrentMonth(defaultNewMonth); 
@@ -503,8 +511,8 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
             category: transactionDataFromVoice.category,
             amount: transactionDataFromVoice.amount, // amount is already number
             isRecurring: transactionDataFromVoice.isRecurring,
-            recurringMonths: String(transactionDataFromVoice.recurringMonths || "1"),
-            dueDay: transactionDataFromVoice.dueDay ? String(transactionDataFromVoice.dueDay) : "",
+            recurringMonths: transactionDataFromVoice.recurringMonths || 1, // Pass as number or default number
+            dueDay: transactionDataFromVoice.dueDay?.toString() || null, // Pass as string (that parses to number) or null
             linked_income_id: transactionDataFromVoice.linked_income_id || null,
             description: transactionDataFromVoice.description || ""
           };
