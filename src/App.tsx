@@ -9,6 +9,7 @@ import { User, Session } from "@supabase/supabase-js";
 import { AuthProvider } from "./contexts/AuthContext";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
+import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
 import MinhaConta from "./pages/MinhaConta";
 import Configuracoes from "./pages/Configuracoes";
@@ -100,6 +101,7 @@ const App = () => (
             }
           />
           <Route path="/login" element={<Login />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
