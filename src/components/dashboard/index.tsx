@@ -137,10 +137,12 @@ export function Dashboard({ budgetId }: DashboardProps) {
              Visão geral das suas finanças
           </p>
         </div>
-        <FilterControls 
-          dateRange={dateRange}
-          setDateRange={setDateRange}
-        />
+        <div className="w-full sm:w-auto mt-4 sm:mt-0"> 
+            <FilterControls 
+            dateRange={dateRange}
+            setDateRange={setDateRange}
+            />
+        </div>
       </div>
 
       {isLoading && !isProcessing ? (
