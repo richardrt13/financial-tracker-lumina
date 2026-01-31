@@ -8,7 +8,7 @@
   "crons": [
     {
       "path": "/api/telegram-proactive-agent",
-      "schedule": "0 9,13,18 * * *"
+      "schedule": "0 13 * * *"
     }
   ],
   "headers": [
