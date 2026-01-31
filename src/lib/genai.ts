@@ -8,10 +8,10 @@ if (!API_KEY) {
 
 const genai = new GoogleGenerativeAI(API_KEY);
 
-const textModelName = "gemini-2.0-flash"; 
+const textModelName = "gemini-2.5-flash"; 
 const textGenerativeModel = genai.getGenerativeModel({ model: textModelName });
 
-const multimodalModelName = "gemini-2.0-flash"; 
+const multimodalModelName = "gemini-2.5-flash"; 
 const multimodalGenerativeModel = genai.getGenerativeModel({
   model: multimodalModelName,
   safetySettings: [
