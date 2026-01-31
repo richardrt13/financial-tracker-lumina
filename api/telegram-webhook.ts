@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { GoogleGenerativeAI, InlineDataPart } from '@google/generative-ai';
 import { Redis } from '@upstash/redis';
+import { generateText, transcribeAudio as groqTranscribeAudio, analyzeImage } from './ai-adapter-edge';
 
 // --- CONFIGURAÇÃO E CONSTANTES ---
 const months = [
@@ -26,6 +26,19 @@ interface TelegramPhoto {
   file_size?: number;
 }
 
+interface TelegramMessage {
+  message_id: number;
+  from?: { id: number; username?: string };
+  chat: { id: number; type: string };
+  text?: string;
+  voice?: TelegramVoice;
+  photo?: TelegramPhoto[];
+}
+
+interface TelegramPayload {
+  message?: TelegramMessage;
+}
+
 // Interface auxiliar para o retorno da IA
 interface TransactionIntention {
     isTransaction: boolean;
@@ -45,13 +58,10 @@ interface TransactionIntention {
 // Inicialização Clientes
 const supabaseUrl = process.env.VITE_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY!;
-const geminiApiKey = process.env.VITE_GEMINI_API_KEY!;
 const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN!;
 const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET!;
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
-const genai = new GoogleGenerativeAI(geminiApiKey);
-const modelFlash = genai.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
 
 // ✅ Redis para histórico de conversas
 const redis = new Redis({
@@ -126,13 +136,13 @@ async function getTelegramFileBuffer(file_id: string): Promise<Buffer> {
 
 async function transcribeAudio(audioBuffer: Buffer, mimeType: string): Promise<string> {
   try {
-    const audioPart = {
-      inlineData: { data: audioBuffer.toString('base64'), mimeType },
-    };
-    const prompt = "Transcreva este áudio para texto em português. Responda apenas com a transcrição pura.";
-    const result = await modelFlash.generateContent([prompt, audioPart]);
-    const text = result.response.text();
-    return text.trim();
+    // Convert Buffer to ArrayBuffer for Groq Whisper
+    const arrayBuffer = audioBuffer.buffer.slice(
+      audioBuffer.byteOffset,
+      audioBuffer.byteOffset + audioBuffer.byteLength
+    ) as ArrayBuffer;
+    const transcription = await groqTranscribeAudio(arrayBuffer, mimeType);
+    return transcription.content.trim();
   } catch (error) {
     console.error("Erro Transcrição:", error);
     return "";
@@ -141,9 +151,7 @@ async function transcribeAudio(audioBuffer: Buffer, mimeType: string): Promise<s
 
 async function analyzeImageForTransaction(imageBuffer: Buffer): Promise<any> {
     try {
-        const imagePart = {
-            inlineData: { data: imageBuffer.toString('base64'), mimeType: 'image/jpeg' },
-        };
+        const imageBase64 = imageBuffer.toString('base64');
         const currentYear = new Date().getFullYear();
         const currentMonthName = months[new Date().getMonth()];
         
@@ -160,8 +168,8 @@ async function analyzeImageForTransaction(imageBuffer: Buffer): Promise<any> {
             Se não for possível identificar, retorne null.
         `;
         
-        const result = await modelFlash.generateContent([prompt, imagePart]);
-        const text = result.response.text().replace(/^```json\s*|```\s*$/g, '').trim();
+        const response = await analyzeImage(prompt, imageBase64, 'image/jpeg');
+        const text = response.content.replace(/^```json\s*|```\s*$/g, '').trim();
         return JSON.parse(text);
     } catch (error) {
         console.error("Erro Vision:", error);
@@ -214,8 +222,8 @@ async function understandIntention(text: string, userId: string): Promise<{
     `;
 
     try {
-        const result = await modelFlash.generateContent(prompt);
-        const jsonText = result.response.text().replace(/^```json\s*|```\s*$/g, '').trim();
+        const response = await generateText(prompt, 'simple', 0.3, 500);
+        const jsonText = response.content.replace(/^```json\s*|```\s*$/g, '').trim();
         return JSON.parse(jsonText);
     } catch (e) {
         console.error("Erro na classificação de intenção:", e);
@@ -288,8 +296,8 @@ async function generateQueryResponse(userId: string, topics: string[], chatId?: 
         Se não tiver dados, diga que não encontrou transações recentes.
         Use emojis apropriados.
     `;
-    const result = await modelFlash.generateContent(prompt);
-    return result.response.text();
+    const llmResponse = await generateText(prompt, 'simple', 0.7, 300);
+    return llmResponse.content;
 }
 
 
