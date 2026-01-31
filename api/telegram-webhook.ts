@@ -50,7 +50,7 @@ const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET!;
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const genai = new GoogleGenerativeAI(geminiApiKey);
-const modelFlash = genai.getGenerativeModel({ model: 'gemini-2.5-flash' });
+const modelFlash = genai.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
 
 // --- FUNÇÕES AUXILIARES ---
 

@@ -79,7 +79,7 @@ class AnalyzerAgent {
 
   constructor(genAI: GoogleGenerativeAI) {
     this.model = genAI.getGenerativeModel({ 
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       generationConfig: {
         temperature: 0.3, // Mais determinístico para análises
       }
@@ -142,7 +142,7 @@ class PredictorAgent {
 
   constructor(genAI: GoogleGenerativeAI) {
     this.model = genAI.getGenerativeModel({ 
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       generationConfig: {
         temperature: 0.4,
       }
@@ -220,7 +220,7 @@ class ExecutorAgent {
 
   constructor(genAI: GoogleGenerativeAI) {
     this.model = genAI.getGenerativeModel({ 
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       generationConfig: {
         temperature: 0.1, // Muito determinístico para ações
       }
@@ -318,7 +318,7 @@ class InsightAgent {
 
   constructor(genAI: GoogleGenerativeAI) {
     this.model = genAI.getGenerativeModel({ 
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       generationConfig: {
         temperature: 0.7, // Mais criativo para insights
       }
@@ -388,7 +388,7 @@ export class ChatEngine {
   constructor(apiKey: string) {
     this.genAI = new GoogleGenerativeAI(apiKey);
     this.orchestratorModel = this.genAI.getGenerativeModel({ 
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       generationConfig: {
         temperature: 0.2,
       }
@@ -489,7 +489,7 @@ ${context.conversationHistory.slice(-3).map(m => `${m.role}: ${m.content}`).join
    */
   private async handleGeneralConversation(message: string, context: ChatContext): Promise<AgentResponse> {
     const model = this.genAI.getGenerativeModel({ 
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       generationConfig: { temperature: 0.8 }
     });
 
