@@ -25,58 +25,45 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 async function analyzerAgent(query: string, context: any): Promise<any> {
   const model = genAI.getGenerativeModel({ 
     model: 'gemini-2.5-flash',
-    generationConfig: { temperature: 0.3 }
+    generationConfig: { temperature: 0.3, maxOutputTokens: 500 }
   });
 
+  // Detectar se é pergunta simples ou análise detalhada
+  const isSimpleQuery = /^(quanto|qual|quais|quantos)\s+(gastei|ganhei|tenho|foi)/i.test(query.trim());
+  
   const prompt = `
-Você é um analista financeiro expert. Analise os dados com profundidade.
+Você é Spendly, assistente financeiro. Responda de forma ${isSimpleQuery ? 'DIRETA e OBJETIVA' : 'detalhada'}.
 
-**Dados Financeiros:**
-- Receita Média Mensal: R$ ${context.profile.averageIncome.toFixed(2)}
-- Despesa Média Mensal: R$ ${context.profile.averageExpense.toFixed(2)}
+**Dados do Usuário:**
+- Receita Média: R$ ${context.profile.averageIncome.toFixed(2)}
+- Despesa Média: R$ ${context.profile.averageExpense.toFixed(2)}
 - Taxa de Economia: ${context.profile.savingsRate.toFixed(1)}%
 - Saúde Financeira: ${context.profile.financialHealth}
 
-**Top Categorias de Gastos:**
-${context.profile.topCategories.map((c: any) => `- ${c.category}: R$ ${c.amount.toFixed(2)} (${c.percentage.toFixed(1)}%)`).join('\n')}
+**Top 3 Categorias:**
+${context.profile.topCategories.slice(0, 3).map((c: any) => `- ${c.category}: R$ ${c.amount.toFixed(2)}`).join('\n')}
 
-**Transações Recentes (últimas 20):**
-${JSON.stringify(context.recentTransactions.slice(0, 20), null, 2)}
+**Últimas 10 Transações:**
+${context.recentTransactions.slice(0, 10).map((t: any) => 
+  `- ${t.amount > 0 ? '+' : ''}R$ ${t.amount.toFixed(2)} (${t.category}) - ${new Date(t.created_at).toLocaleDateString('pt-BR')}`
+).join('\n')}
 
 **Pergunta:** ${query}
 
-**Instruções:**
-1. Analise os dados quantitativamente com precisão
-2. Identifique padrões, tendências e anomalias
-3. Compare com benchmarks financeiros (ex: 50/30/20 rule)
-4. Use formatação Markdown rica (tabelas, listas, negrito)
-5. Seja específico com números e percentuais
-6. Forneça insights acionáveis
+**IMPORTANTE:** 
+${isSimpleQuery 
+  ? '⚡ Responda em 2-3 LINHAS, direto ao ponto. Exemplo: "Você gastou R$ 1.234,50 este mês. As maiores despesas foram Alimentação (R$ 450) e Transporte (R$ 300). 📊"'
+  : '📊 Forneça análise completa com insights e recomendações práticas.'
+}
 
-**Estrutura da Resposta:**
-### 📊 Análise Financeira
-
-**Resumo Executivo:**
-[2-3 linhas principais]
-
-**Análise Detalhada:**
-[breakdown dos dados]
-
-**Principais Insights:**
-- Insight 1
-- Insight 2
-- Insight 3
-
-**Recomendações:**
-1. Ação específica 1
-2. Ação específica 2
+Responda em português brasileiro com emojis apropriados.
   `;
 
   const result = await model.generateContent(prompt);
   return {
     content: result.response.text(),
     confidence: 0.85,
-    toolsUsed: ['data_analysis', 'trend_detection']
+    toolsUsed: ['data_analysis', isSimpleQuery ? 'quick_answer' : 'trend_detection']
   };
 }
 
@@ -86,60 +73,39 @@ ${JSON.stringify(context.recentTransactions.slice(0, 20), null, 2)}
 async function predictorAgent(query: string, context: any): Promise<any> {
   const model = genAI.getGenerativeModel({ 
     model: 'gemini-2.5-flash',
-    generationConfig: { temperature: 0.4 }
+    generationConfig: { temperature: 0.4, maxOutputTokens: 400 }
   });
 
   // Calcular histórico mensal
   const monthlyData = calculateMonthlyHistory(context.recentTransactions);
 
   const prompt = `
-Você é um especialista em modelagem financeira e previsões.
+Você é Spendly, especialista em projeções financeiras. Seja DIRETO e PRÁTICO.
 
-**Dados Históricos (últimos meses):**
-${JSON.stringify(monthlyData, null, 2)}
-
-**Perfil Atual:**
+**Dados do Usuário:**
 - Receita Média: R$ ${context.profile.averageIncome.toFixed(2)}
 - Despesa Média: R$ ${context.profile.averageExpense.toFixed(2)}
 - Economia Mensal: R$ ${(context.profile.averageIncome - context.profile.averageExpense).toFixed(2)}
-- Taxa de Crescimento: ${context.profile.monthlyGrowth.toFixed(1)}%
 
 **Pergunta:** ${query}
 
-**Instruções:**
-1. Analise as tendências históricas usando os dados mensais
-2. Calcule médias móveis e variações
-3. Projete 3 cenários: otimista (+10%), realista (base), pessimista (-10%)
-4. Forneça intervalos de tempo específicos
-5. Use fórmulas matemáticas quando relevante
-6. Indique grau de confiança nas previsões
+**REGRAS:**
+1. ⚡ Responda em 4-5 linhas no máximo
+2. 📊 Use cálculos simples e diretos
+3. 🎯 Forneça tempo estimado e valor
+4. ⚠️ Mencione riscos se relevante
 
-**Estrutura:**
-### 🔮 Projeção Financeira
+**Exemplo de resposta boa:**
+"Com sua economia atual de R$ 1.200/mês, você juntará R$ 10.000 em cerca de 8-9 meses. Se aumentar a economia em 20%, pode chegar lá em 7 meses. 🎯"
 
-**Análise de Tendências:**
-[análise do histórico]
-
-**Cenários Projetados:**
-
-**🟢 Otimista:**
-- [projeção]
-
-**🟡 Realista:**
-- [projeção]
-
-**🔴 Pessimista:**
-- [projeção]
-
-**Recomendações:**
-[ações baseadas nas projeções]
+Responda em português brasileiro.
   `;
 
   const result = await model.generateContent(prompt);
   return {
     content: result.response.text(),
     confidence: 0.75,
-    toolsUsed: ['trend_analysis', 'forecasting']
+    toolsUsed: ['forecasting']
   };
 }
 
@@ -225,50 +191,44 @@ Analise se a mensagem requer execução de ações no sistema.
 async function insightAgent(context: any): Promise<any> {
   const model = genAI.getGenerativeModel({ 
     model: 'gemini-2.5-flash',
-    generationConfig: { temperature: 0.7 }
+    generationConfig: { temperature: 0.7, maxOutputTokens: 400 }
   });
 
   const prompt = `
-Você é um consultor financeiro experiente. Analise o perfil e descubra insights valiosos.
+Você é Spendly, consultor financeiro. Descubra insights PRÁTICOS e ACIONÁVEIS.
 
 **Perfil Financeiro:**
-${JSON.stringify(context.profile, null, 2)}
+- Receita: R$ ${context.profile.averageIncome.toFixed(2)}
+- Despesa: R$ ${context.profile.averageExpense.toFixed(2)}
+- Saúde: ${context.profile.financialHealth}
 
-**Transações dos Últimos 30 Dias:**
-${JSON.stringify(context.recentTransactions.slice(0, 30), null, 2)}
+**Top 5 Categorias:**
+${context.profile.topCategories.slice(0, 5).map((c: any) => 
+  `- ${c.category}: R$ ${c.amount.toFixed(2)}`
+).join('\n')}
 
-**Missão:**
-1. Identificar padrões de comportamento (horários, categorias recorrentes, etc)
-2. Detectar anomalias ou gastos atípicos
-3. Encontrar oportunidades concretas de economia
-4. Sugerir otimizações específicas e mensuráveis
-5. Alertar sobre riscos ou problemas emergentes
+**Últimas 20 Transações:**
+${context.recentTransactions.slice(0, 20).map((t: any) => 
+  `R$ ${t.amount.toFixed(2)} - ${t.category}`
+).join('\n')}
 
-**Estrutura:**
-### 💡 Insights Financeiros Descobertos
+**REGRAS:**
+1. ⚡ Máximo 5-6 linhas
+2. 💡 Foque em 2-3 insights PRÁTICOS
+3. 💰 Quantifique economia potencial
+4. 🎯 Sugira ações específicas
 
-**🔍 Padrões Identificados:**
-- [padrão 1 com dados específicos]
-- [padrão 2 com dados específicos]
+**Exemplo bom:**
+"💡 Você gastou R$ 450 em Alimentação este mês. Reduzindo 20% (cozinhando mais em casa), economizaria R$ 90/mês. Também notei 3 assinaturas pequenas (R$ 50 total) que podem ser canceladas. 🎯"
 
-**⚡ Oportunidades de Economia:**
-- [oportunidade 1 com valor estimado]
-- [oportunidade 2 com valor estimado]
-
-**⚠️ Alertas e Riscos:**
-- [alerta se houver]
-
-**📈 Sugestões de Crescimento:**
-- [sugestão prática]
-
-Seja extremamente específico. Use números reais do contexto. Quantifique as oportunidades.
+Responda em português brasileiro.
   `;
 
   const result = await model.generateContent(prompt);
   return {
     content: result.response.text(),
     confidence: 0.8,
-    toolsUsed: ['pattern_recognition', 'anomaly_detection', 'opportunity_finding']
+    toolsUsed: ['pattern_recognition', 'opportunity_finding']
   };
 }
 
@@ -278,7 +238,7 @@ Seja extremamente específico. Use números reais do contexto. Quantifique as op
 async function generalAgent(query: string, context: any, history: any[]): Promise<any> {
   const model = genAI.getGenerativeModel({ 
     model: 'gemini-2.5-flash',
-    generationConfig: { temperature: 0.8 }
+    generationConfig: { temperature: 0.8, maxOutputTokens: 300 }
   });
 
   const healthEmoji = {
@@ -289,34 +249,29 @@ async function generalAgent(query: string, context: any, history: any[]): Promis
   };
 
   const prompt = `
-Você é **Spendly**, um assistente financeiro inteligente, amigável e proativo.
+Você é **Spendly**, um assistente financeiro amigável e direto.
 
 **Contexto do Usuário:**
-- 💰 Economia Mensal: R$ ${(context.profile.averageIncome - context.profile.averageExpense).toFixed(2)}
-- ${healthEmoji[context.profile.financialHealth as keyof typeof healthEmoji]} Saúde Financeira: ${context.profile.financialHealth}
-- 📊 Taxa de Economia: ${context.profile.savingsRate.toFixed(1)}%
+- 💰 Economia: R$ ${(context.profile.averageIncome - context.profile.averageExpense).toFixed(2)}/mês
+- ${healthEmoji[context.profile.financialHealth as keyof typeof healthEmoji]} Saúde: ${context.profile.financialHealth}
 
-**Histórico da Conversa:**
-${history.slice(-3).map((m: any) => `${m.role === 'user' ? 'Usuário' : 'Você'}: ${m.content}`).join('\n')}
+**Conversa Recente:**
+${history.slice(-2).map((m: any) => `${m.role === 'user' ? 'User' : 'You'}: ${m.content.substring(0, 80)}`).join('\n')}
 
-**Mensagem Atual:** ${query}
+**Mensagem:** ${query}
 
-**Instruções:**
-1. Responda de forma natural, amigável e empática
-2. Use emojis apropriados para dar vida à conversa
-3. Quando apropriado, mencione funcionalidades úteis
-4. Se o usuário parecer perdido, ofereça sugestões do que pode perguntar
-5. Seja proativa - sugira ações que podem ajudar
-6. Use formatação Markdown para clareza
+**REGRAS:**
+1. ⚡ Seja BREVE - máximo 3-4 linhas
+2. 😊 Use tom amigável com emojis
+3. 💡 Sugira ações úteis quando apropriado
+4. ❌ NÃO faça análises longas (isso é trabalho do analyzer)
 
-**Exemplos de Perguntas que Você Pode Sugerir:**
+**Exemplos do que sugerir:**
 - "Quanto gastei este mês?"
-- "Em quanto tempo consigo juntar R$ 10.000?"
-- "Quais são minhas maiores despesas?"
-- "Como está minha saúde financeira?"
-- "Me dê insights sobre meus gastos"
+- "Quais minhas maiores despesas?"
+- "Em quanto tempo junto R$ 10.000?"
 
-Responda de forma personalizada e útil!
+Responda em português brasileiro.
   `;
 
   const result = await model.generateContent(prompt);
