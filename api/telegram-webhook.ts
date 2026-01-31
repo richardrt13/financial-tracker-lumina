@@ -406,7 +406,8 @@ async function registerTransaction(userId: string, budgetId: string, chatId: num
         category: data.category, // Categoria original sugerida ou existente
         amount: data.amount,
         description: data.description || 'Gasto via Telegram',
-        date: new Date().toISOString(),
+        year: new Date().getFullYear().toString(),
+        month: months[new Date().getMonth()], 
         payment_status: 'paid' 
     };
 
