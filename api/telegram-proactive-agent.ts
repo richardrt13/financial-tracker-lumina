@@ -1,0 +1,451 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { createClient } from '@supabase/supabase-js';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { Redis } from '@upstash/redis';
+
+// --- CONFIGURAÇÃO ---
+const supabase = createClient(
+  process.env.VITE_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_KEY!
+);
+
+const genai = new GoogleGenerativeAI(process.env.VITE_GEMINI_API_KEY!);
+const model = genai.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
+
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
+
+const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN!;
+const CRON_SECRET = process.env.CRON_SECRET || 'your-secret-key';
+
+// --- TIPOS ---
+interface FinancialContext {
+  userId: string;
+  chatId: number;
+  username?: string;
+  
+  // Dados do mês atual
+  currentMonth: {
+    income: number;
+    expense: number;
+    balance: number;
+    transactionCount: number;
+    avgDailyExpense: number;
+  };
+  
+  // Comparação com mês anterior
+  lastMonth: {
+    income: number;
+    expense: number;
+    balance: number;
+  };
+  
+  // Tendências
+  trends: {
+    expenseGrowth: number; // %
+    incomeGrowth: number; // %
+    savingsRate: number; // %
+  };
+  
+  // Categorias
+  topCategories: Array<{
+    category: string;
+    amount: number;
+    percentage: number;
+  }>;
+  
+  // Alertas potenciais
+  alerts: {
+    budgetOverrun: boolean;
+    unusualExpense: boolean;
+    lowSavings: boolean;
+    highCategorySpending: string | null;
+  };
+  
+  // Histórico de mensagens proativas
+  lastProactiveMessage?: number; // timestamp
+  proactiveMessageCount: number; // últimas 24h
+}
+
+interface ProactiveInsight {
+  priority: 'high' | 'medium' | 'low';
+  category: 'alert' | 'tip' | 'celebration' | 'reminder' | 'analysis';
+  message: string;
+  shouldSend: boolean;
+  reasoning: string;
+}
+
+// --- FUNÇÕES AUXILIARES ---
+
+async function sendTelegramMessage(chatId: number, text: string) {
+  const url = `https://api.telegram.org/bot${telegramBotToken}/sendMessage`;
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: 'Markdown',
+      }),
+    });
+    
+    if (!response.ok) {
+      console.error('Erro ao enviar mensagem Telegram:', await response.text());
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error('Falha de rede (Telegram):', error);
+    return false;
+  }
+}
+
+async function getFinancialContext(userId: string, chatId: number): Promise<FinancialContext | null> {
+  try {
+    const now = new Date();
+    const currentMonth = {
+      start: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0],
+      end: new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0],
+    };
+    
+    const lastMonth = {
+      start: new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0],
+      end: new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0],
+    };
+
+    // Buscar transações do mês atual
+    const { data: currentTxs } = await supabase
+      .from('transactions')
+      .select('type, amount, category, date')
+      .eq('user_id', userId)
+      .gte('date', currentMonth.start)
+      .lte('date', currentMonth.end);
+
+    // Buscar transações do mês anterior
+    const { data: lastTxs } = await supabase
+      .from('transactions')
+      .select('type, amount, category, date')
+      .eq('user_id', userId)
+      .gte('date', lastMonth.start)
+      .lte('date', lastMonth.end);
+
+    if (!currentTxs) return null;
+
+    // Calcular métricas do mês atual
+    const currentIncome = currentTxs.filter(t => t.type === 'receita').reduce((sum, t) => sum + Number(t.amount), 0);
+    const currentExpense = currentTxs.filter(t => t.type === 'despesa').reduce((sum, t) => sum + Number(t.amount), 0);
+    const currentBalance = currentIncome - currentExpense;
+    
+    // Calcular métricas do mês anterior
+    const lastIncome = lastTxs?.filter(t => t.type === 'receita').reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+    const lastExpense = lastTxs?.filter(t => t.type === 'despesa').reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+    const lastBalance = lastIncome - lastExpense;
+
+    // Tendências
+    const expenseGrowth = lastExpense > 0 ? ((currentExpense - lastExpense) / lastExpense) * 100 : 0;
+    const incomeGrowth = lastIncome > 0 ? ((currentIncome - lastIncome) / lastIncome) * 100 : 0;
+    const savingsRate = currentIncome > 0 ? (currentBalance / currentIncome) * 100 : 0;
+
+    // Top categorias
+    const categoryTotals: Record<string, number> = {};
+    currentTxs.filter(t => t.type === 'despesa').forEach(t => {
+      categoryTotals[t.category] = (categoryTotals[t.category] || 0) + Number(t.amount);
+    });
+    
+    const topCategories = Object.entries(categoryTotals)
+      .map(([category, amount]) => ({
+        category,
+        amount,
+        percentage: currentExpense > 0 ? (amount / currentExpense) * 100 : 0,
+      }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 5);
+
+    // Alertas
+    const alerts = {
+      budgetOverrun: currentExpense > currentIncome,
+      unusualExpense: expenseGrowth > 30, // Aumento de 30%+
+      lowSavings: savingsRate < 10 && currentIncome > 0,
+      highCategorySpending: topCategories[0]?.percentage > 40 ? topCategories[0].category : null,
+    };
+
+    // Histórico de mensagens proativas
+    const lastMessageKey = `proactive_last:${userId}`;
+    const countKey = `proactive_count:${userId}`;
+    
+    const lastProactiveMessage = await redis.get(lastMessageKey) as number | null;
+    const proactiveMessageCount = (await redis.get(countKey) as number) || 0;
+
+    // Dias desde o início do mês
+    const daysInMonth = now.getDate();
+    const avgDailyExpense = daysInMonth > 0 ? currentExpense / daysInMonth : 0;
+
+    return {
+      userId,
+      chatId,
+      currentMonth: {
+        income: currentIncome,
+        expense: currentExpense,
+        balance: currentBalance,
+        transactionCount: currentTxs.length,
+        avgDailyExpense,
+      },
+      lastMonth: {
+        income: lastIncome,
+        expense: lastExpense,
+        balance: lastBalance,
+      },
+      trends: {
+        expenseGrowth,
+        incomeGrowth,
+        savingsRate,
+      },
+      topCategories,
+      alerts,
+      lastProactiveMessage: lastProactiveMessage || undefined,
+      proactiveMessageCount,
+    };
+  } catch (error) {
+    console.error('Erro ao buscar contexto financeiro:', error);
+    return null;
+  }
+}
+
+async function generateProactiveInsight(context: FinancialContext): Promise<ProactiveInsight | null> {
+  try {
+    const now = Date.now();
+    const hoursSinceLastMessage = context.lastProactiveMessage 
+      ? (now - context.lastProactiveMessage) / (1000 * 60 * 60)
+      : 24;
+
+    // Regras de throttling
+    if (hoursSinceLastMessage < 6) {
+      // Não enviar se última mensagem foi há menos de 6 horas
+      return null;
+    }
+
+    if (context.proactiveMessageCount >= 3) {
+      // Máximo 3 mensagens proativas por dia
+      return null;
+    }
+
+    // Montar contexto para a IA
+    const prompt = `
+Você é Spendly, um assistente financeiro proativo via Telegram. Analise a situação financeira do usuário e decida se deve enviar uma mensagem proativa.
+
+**CONTEXTO FINANCEIRO:**
+
+**Mês Atual:**
+- Receitas: R$ ${context.currentMonth.income.toFixed(2)}
+- Despesas: R$ ${context.currentMonth.expense.toFixed(2)}
+- Saldo: R$ ${context.currentMonth.balance.toFixed(2)}
+- Transações: ${context.currentMonth.transactionCount}
+- Gasto médio diário: R$ ${context.currentMonth.avgDailyExpense.toFixed(2)}
+
+**Mês Anterior:**
+- Receitas: R$ ${context.lastMonth.income.toFixed(2)}
+- Despesas: R$ ${context.lastMonth.expense.toFixed(2)}
+- Saldo: R$ ${context.lastMonth.balance.toFixed(2)}
+
+**Tendências:**
+- Crescimento de despesas: ${context.trends.expenseGrowth.toFixed(1)}%
+- Crescimento de receitas: ${context.trends.incomeGrowth.toFixed(1)}%
+- Taxa de economia: ${context.trends.savingsRate.toFixed(1)}%
+
+**Top Categorias de Gasto:**
+${context.topCategories.map(c => `- ${c.category}: R$ ${c.amount.toFixed(2)} (${c.percentage.toFixed(1)}%)`).join('\n')}
+
+**Alertas Identificados:**
+- Gastos > Receitas: ${context.alerts.budgetOverrun ? 'SIM ⚠️' : 'Não'}
+- Despesas aumentaram 30%+: ${context.alerts.unusualExpense ? 'SIM ⚠️' : 'Não'}
+- Taxa economia < 10%: ${context.alerts.lowSavings ? 'SIM ⚠️' : 'Não'}
+- Categoria dominante (>40%): ${context.alerts.highCategorySpending || 'Não'}
+
+**Contexto de Mensagens:**
+- Última mensagem proativa: ${context.lastProactiveMessage ? `há ${hoursSinceLastMessage.toFixed(1)}h` : 'nunca'}
+- Mensagens hoje: ${context.proactiveMessageCount}/3
+
+---
+
+**SUA MISSÃO:**
+
+Analise CRITICAMENTE se vale a pena enviar uma mensagem proativa agora. Considere:
+
+1. **Relevância**: O insight é útil e acionável?
+2. **Urgência**: Há algo que precisa de atenção imediata?
+3. **Valor**: O usuário vai se beneficiar desta informação agora?
+4. **Timing**: É o momento certo (hora do dia, contexto)?
+5. **Novidade**: É algo que o usuário não sabe ou precisa ser lembrado?
+
+**CRITÉRIOS PARA ENVIAR:**
+- ✅ Alertas críticos (gastos > receitas, aumento brusco)
+- ✅ Oportunidades claras de economia
+- ✅ Celebrações (meta atingida, economia recorde)
+- ✅ Lembretes importantes (final do mês, padrões)
+- ❌ Informações triviais ou óbvias
+- ❌ Spam (já enviou mensagem recente sobre o mesmo)
+
+**HORA ATUAL:** ${new Date().getHours()}h (considere se é horário apropriado)
+
+---
+
+**RESPONDA EM JSON:**
+
+{
+  "shouldSend": true/false,
+  "priority": "high" | "medium" | "low",
+  "category": "alert" | "tip" | "celebration" | "reminder" | "analysis",
+  "message": "Mensagem em português, 2-4 linhas, tom amigável, com emojis apropriados",
+  "reasoning": "Por que decidiu enviar (ou não enviar)"
+}
+
+**EXEMPLOS DE BOAS MENSAGENS:**
+
+✅ "🚨 Opa! Suas despesas já ultrapassaram suas receitas este mês. Você está R$ 500 no vermelho. Que tal revisar os gastos em Alimentação? Posso ajudar!"
+
+✅ "💡 Notei que você gasta R$ 300/mês em Transporte. Algumas viagens poderiam ser substituídas por carona ou bike? Economia potencial: R$ 100/mês! 🚴"
+
+✅ "🎉 Parabéns! Você está economizando 25% da sua receita este mês. Continue assim e vai juntar R$ 3.000 até o final do ano! 💰"
+
+❌ "Você tem 15 transações este mês" (informação trivial)
+
+❌ "Suas despesas são R$ 1.234,56" (sem contexto ou ação)
+`;
+
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text().trim();
+    
+    // Extrair JSON
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.error('Resposta da IA não contém JSON válido');
+      return null;
+    }
+
+    const insight: ProactiveInsight = JSON.parse(jsonMatch[0]);
+    
+    // Validar resposta
+    if (!insight.shouldSend) {
+      console.log(`[${context.userId}] Agente decidiu NÃO enviar: ${insight.reasoning}`);
+      return null;
+    }
+
+    return insight;
+  } catch (error) {
+    console.error('Erro ao gerar insight proativo:', error);
+    return null;
+  }
+}
+
+async function markMessageSent(userId: string) {
+  try {
+    const now = Date.now();
+    const lastMessageKey = `proactive_last:${userId}`;
+    const countKey = `proactive_count:${userId}`;
+    
+    // Atualizar timestamp da última mensagem
+    await redis.set(lastMessageKey, now, { ex: 86400 }); // Expira em 24h
+    
+    // Incrementar contador (reseta à meia-noite)
+    const count = (await redis.get(countKey) as number) || 0;
+    
+    // Calcular segundos até meia-noite
+    const now_date = new Date();
+    const midnight = new Date(now_date);
+    midnight.setHours(24, 0, 0, 0);
+    const secondsUntilMidnight = Math.floor((midnight.getTime() - now_date.getTime()) / 1000);
+    
+    await redis.set(countKey, count + 1, { ex: secondsUntilMidnight });
+  } catch (error) {
+    console.error('Erro ao marcar mensagem enviada:', error);
+  }
+}
+
+// --- HANDLER PRINCIPAL ---
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Autenticação (cron secret)
+  const authHeader = req.headers.authorization;
+  if (authHeader !== `Bearer ${CRON_SECRET}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    console.log('🤖 Agente proativo iniciado:', new Date().toISOString());
+
+    // Buscar todos os usuários com Telegram vinculado
+    const { data: telegramLinks } = await supabase
+      .from('telegram_links')
+      .select('user_id, chat_id, username');
+
+    if (!telegramLinks || telegramLinks.length === 0) {
+      return res.json({ message: 'Nenhum usuário com Telegram vinculado', sent: 0 });
+    }
+
+    console.log(`📱 Processando ${telegramLinks.length} usuários...`);
+
+    let sentCount = 0;
+    const results: any[] = [];
+
+    for (const link of telegramLinks) {
+      try {
+        // 1. Buscar contexto financeiro
+        const context = await getFinancialContext(link.user_id, link.chat_id);
+        if (!context) {
+          console.log(`[${link.user_id}] Contexto não disponível`);
+          continue;
+        }
+
+        // 2. Gerar insight com IA
+        const insight = await generateProactiveInsight(context);
+        if (!insight) {
+          console.log(`[${link.user_id}] Nenhum insight gerado`);
+          continue;
+        }
+
+        // 3. Enviar mensagem
+        const sent = await sendTelegramMessage(context.chatId, insight.message);
+        
+        if (sent) {
+          // 4. Marcar como enviado
+          await markMessageSent(link.user_id);
+          sentCount++;
+          
+          results.push({
+            userId: link.user_id,
+            chatId: link.chat_id,
+            priority: insight.priority,
+            category: insight.category,
+            sent: true,
+            reasoning: insight.reasoning,
+          });
+          
+          console.log(`✅ [${link.user_id}] Mensagem enviada (${insight.category}/${insight.priority})`);
+        }
+      } catch (userError) {
+        console.error(`❌ Erro ao processar usuário ${link.user_id}:`, userError);
+        results.push({
+          userId: link.user_id,
+          error: String(userError),
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      usersProcessed: telegramLinks.length,
+      messagesSent: sentCount,
+      results,
+    });
+  } catch (error) {
+    console.error('❌ Erro no agente proativo:', error);
+    return res.status(500).json({
+      error: 'Internal server error',
+      message: String(error),
+    });
+  }
+}

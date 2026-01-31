@@ -34,18 +34,19 @@ async function analyzerAgent(query: string, context: any): Promise<any> {
   const prompt = `
 Você é Spendly, assistente financeiro. Responda de forma ${isSimpleQuery ? 'DIRETA e OBJETIVA' : 'detalhada'}.
 
-**Dados do Usuário:**
-- Receita Média: R$ ${context.profile.averageIncome.toFixed(2)}
-- Despesa Média: R$ ${context.profile.averageExpense.toFixed(2)}
+**Dados do Mês Atual (${new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}):**
+- Receitas: R$ ${context.profile.averageIncome.toFixed(2)}
+- Despesas: R$ ${context.profile.averageExpense.toFixed(2)}
+- Saldo: R$ ${(context.profile.averageIncome - context.profile.averageExpense).toFixed(2)}
 - Taxa de Economia: ${context.profile.savingsRate.toFixed(1)}%
 - Saúde Financeira: ${context.profile.financialHealth}
 
-**Top 3 Categorias:**
+**Top 3 Categorias de Gasto Este Mês:**
 ${context.profile.topCategories.slice(0, 3).map((c: any) => `- ${c.category}: R$ ${c.amount.toFixed(2)}`).join('\n')}
 
 **Últimas 10 Transações:**
 ${context.recentTransactions.slice(0, 10).map((t: any) => 
-  `- ${t.amount > 0 ? '+' : ''}R$ ${t.amount.toFixed(2)} (${t.category}) - ${new Date(t.created_at).toLocaleDateString('pt-BR')}`
+  `- ${t.amount > 0 ? '+' : ''}R$ ${t.amount.toFixed(2)} (${t.category}) - ${new Date(t.date || t.created_at).toLocaleDateString('pt-BR')}`
 ).join('\n')}
 
 **Pergunta:** ${query}
@@ -82,16 +83,16 @@ async function predictorAgent(query: string, context: any): Promise<any> {
   const prompt = `
 Você é Spendly, especialista em projeções financeiras. Seja DIRETO e PRÁTICO.
 
-**Dados do Usuário:**
-- Receita Média: R$ ${context.profile.averageIncome.toFixed(2)}
-- Despesa Média: R$ ${context.profile.averageExpense.toFixed(2)}
-- Economia Mensal: R$ ${(context.profile.averageIncome - context.profile.averageExpense).toFixed(2)}
+**Dados do Mês Atual:**
+- Receitas: R$ ${context.profile.averageIncome.toFixed(2)}
+- Despesas: R$ ${context.profile.averageExpense.toFixed(2)}
+- Economia Este Mês: R$ ${(context.profile.averageIncome - context.profile.averageExpense).toFixed(2)}
 
 **Pergunta:** ${query}
 
 **REGRAS:**
 1. ⚡ Responda em 4-5 linhas no máximo
-2. 📊 Use cálculos simples e diretos
+2. 📊 Use a economia do mês atual para cálculos
 3. 🎯 Forneça tempo estimado e valor
 4. ⚠️ Mencione riscos se relevante
 
@@ -197,24 +198,25 @@ async function insightAgent(context: any): Promise<any> {
   const prompt = `
 Você é Spendly, consultor financeiro. Descubra insights PRÁTICOS e ACIONÁVEIS.
 
-**Perfil Financeiro:**
-- Receita: R$ ${context.profile.averageIncome.toFixed(2)}
-- Despesa: R$ ${context.profile.averageExpense.toFixed(2)}
+**Perfil Financeiro (Mês Atual):**
+- Receitas: R$ ${context.profile.averageIncome.toFixed(2)}
+- Despesas: R$ ${context.profile.averageExpense.toFixed(2)}
+- Saldo: R$ ${(context.profile.averageIncome - context.profile.averageExpense).toFixed(2)}
 - Saúde: ${context.profile.financialHealth}
 
-**Top 5 Categorias:**
+**Top 5 Categorias Este Mês:**
 ${context.profile.topCategories.slice(0, 5).map((c: any) => 
   `- ${c.category}: R$ ${c.amount.toFixed(2)}`
 ).join('\n')}
 
 **Últimas 20 Transações:**
 ${context.recentTransactions.slice(0, 20).map((t: any) => 
-  `R$ ${t.amount.toFixed(2)} - ${t.category}`
+  `R$ ${t.amount.toFixed(2)} - ${t.category} (${new Date(t.date || t.created_at).toLocaleDateString('pt-BR')})`
 ).join('\n')}
 
 **REGRAS:**
 1. ⚡ Máximo 5-6 linhas
-2. 💡 Foque em 2-3 insights PRÁTICOS
+2. 💡 Foque em 2-3 insights PRÁTICOS do MÊS ATUAL
 3. 💰 Quantifique economia potencial
 4. 🎯 Sugira ações específicas
 
@@ -251,8 +253,8 @@ async function generalAgent(query: string, context: any, history: any[]): Promis
   const prompt = `
 Você é **Spendly**, um assistente financeiro amigável e direto.
 
-**Contexto do Usuário:**
-- 💰 Economia: R$ ${(context.profile.averageIncome - context.profile.averageExpense).toFixed(2)}/mês
+**Contexto do Usuário (Mês Atual):**
+- 💰 Saldo: R$ ${(context.profile.averageIncome - context.profile.averageExpense).toFixed(2)}
 - ${healthEmoji[context.profile.financialHealth as keyof typeof healthEmoji]} Saúde: ${context.profile.financialHealth}
 
 **Conversa Recente:**
@@ -429,73 +431,101 @@ function getActionLabel(action: string): string {
 
 async function buildFinancialContext(userId: string): Promise<any> {
   try {
-    // ✅ SEGURANÇA: Buscar APENAS transações do usuário logado
-    // ✅ PERFORMANCE: Limitar a 100 transações mais recentes (reduzido de 200)
-    const { data: transactions, error } = await supabaseAdmin
-      .from('transactions')
-      .select('id, amount, type, category, created_at') // Selecionar apenas campos necessários
-      .eq('user_id', userId) // 🔒 ISOLAMENTO: Apenas dados do usuário
-      .order('created_at', { ascending: false })
-      .limit(100); // Reduzir para melhorar performance
+    // ✅ Calcular intervalo do mês atual (IGUAL AO TELEGRAM)
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
 
-    if (error) {
-      console.error('Erro ao buscar transações:', error);
-      throw error;
+    // ✅ Buscar transações do MÊS ATUAL usando campo 'date' (IGUAL AO TELEGRAM)
+    const { data: currentMonthTxs, error: currentError } = await supabaseAdmin
+      .from('transactions')
+      .select('id, amount, type, category, date, created_at')
+      .eq('user_id', userId) // 🔒 ISOLAMENTO
+      .gte('date', firstDay)
+      .lte('date', lastDay)
+      .order('date', { ascending: false });
+
+    if (currentError) {
+      console.error('Erro ao buscar transações do mês:', currentError);
+      throw currentError;
     }
 
-    // Verificar se há dados
-    if (!transactions || transactions.length === 0) {
-      console.log(`Usuário ${userId} não tem transações`);
+    // ✅ Buscar transações dos últimos 3 meses para histórico
+    const threeMonthsAgo = new Date();
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    const threeMonthsDate = threeMonthsAgo.toISOString().split('T')[0];
+
+    const { data: historicalTxs, error: histError } = await supabaseAdmin
+      .from('transactions')
+      .select('type, amount, date')
+      .eq('user_id', userId)
+      .gte('date', threeMonthsDate)
+      .order('date', { ascending: false });
+
+    if (histError) {
+      console.error('Erro ao buscar histórico:', histError);
+    }
+
+    // Verificar se há dados do mês atual
+    if (!currentMonthTxs || currentMonthTxs.length === 0) {
+      console.log(`Usuário ${userId} não tem transações este mês`);
       return {
         profile: getDefaultProfile(),
-        recentTransactions: []
+        recentTransactions: [],
+        currentMonth: { income: 0, expense: 0 }
       };
     }
 
-    // Calcular perfil
-    const profile = calculateFinancialProfile(transactions);
+    // Calcular perfil baseado no mês atual E histórico
+    const profile = calculateFinancialProfile(currentMonthTxs, historicalTxs || []);
 
-    console.log(`Contexto carregado para usuário ${userId}: ${transactions.length} transações`);
+    console.log(`Contexto: ${currentMonthTxs.length} txs este mês para usuário ${userId}`);
 
     return {
       profile,
-      recentTransactions: transactions
+      recentTransactions: currentMonthTxs.slice(0, 20), // Últimas 20 do mês
+      currentMonth: {
+        income: currentMonthTxs.filter(t => t.type === 'receita').reduce((sum, t) => sum + Number(t.amount), 0),
+        expense: currentMonthTxs.filter(t => t.type === 'despesa').reduce((sum, t) => sum + Number(t.amount), 0)
+      }
     };
   } catch (error) {
     console.error('Error building context:', error);
     return {
       profile: getDefaultProfile(),
-      recentTransactions: []
+      recentTransactions: [],
+      currentMonth: { income: 0, expense: 0 }
     };
   }
 }
 
-function calculateFinancialProfile(transactions: any[]): any {
-  if (transactions.length === 0) return getDefaultProfile();
+function calculateFinancialProfile(currentMonthTxs: any[], historicalTxs: any[]): any {
+  if (currentMonthTxs.length === 0) return getDefaultProfile();
 
-  // Últimos 3 meses
-  const threeMonthsAgo = new Date();
-  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-
-  const recent = transactions.filter(t => new Date(t.created_at) >= threeMonthsAgo);
-
+  // ✅ CALCULAR MÊS ATUAL (igual ao Telegram)
+  const currentIncome = currentMonthTxs.filter(t => t.type === 'receita').reduce((sum, t) => sum + Number(t.amount), 0);
+  const currentExpense = currentMonthTxs.filter(t => t.type === 'despesa').reduce((sum, t) => sum + Number(t.amount), 0);
+  
+  // Calcular média dos últimos 3 meses (para contexto adicional)
   const monthlyData: Record<string, { income: number; expense: number }> = {};
-  recent.forEach(t => {
-    const key = `${new Date(t.created_at).getFullYear()}-${new Date(t.created_at).getMonth()}`;
+  historicalTxs.forEach(t => {
+    const key = `${new Date(t.date).getFullYear()}-${new Date(t.date).getMonth()}`;
     if (!monthlyData[key]) monthlyData[key] = { income: 0, expense: 0 };
     if (t.type === 'receita') monthlyData[key].income += Number(t.amount);
     else if (t.type === 'despesa') monthlyData[key].expense += Number(t.amount);
   });
 
   const months = Object.values(monthlyData);
-  const avgIncome = months.reduce((sum, m) => sum + m.income, 0) / (months.length || 1);
-  const avgExpense = months.reduce((sum, m) => sum + m.expense, 0) / (months.length || 1);
-  const savingsRate = avgIncome > 0 ? ((avgIncome - avgExpense) / avgIncome) * 100 : 0;
+  const avgIncome = months.length > 0 ? months.reduce((sum, m) => sum + m.income, 0) / months.length : currentIncome;
+  const avgExpense = months.length > 0 ? months.reduce((sum, m) => sum + m.expense, 0) / months.length : currentExpense;
+  
+  // ✅ USAR MÊS ATUAL para savings rate (não média)
+  const savingsRate = currentIncome > 0 ? ((currentIncome - currentExpense) / currentIncome) * 100 : 0;
 
-  // Top categorias
+  // ✅ Top categorias DO MÊS ATUAL (igual ao Telegram)
   const categoryTotals: Record<string, number> = {};
   let totalExpense = 0;
-  transactions.forEach(t => {
+  currentMonthTxs.forEach(t => {
     if (t.type === 'despesa') {
       const cat = t.category || 'Outros';
       categoryTotals[cat] = (categoryTotals[cat] || 0) + Number(t.amount);
@@ -507,25 +537,29 @@ function calculateFinancialProfile(transactions: any[]): any {
     .map(([category, amount]) => ({
       category,
       amount,
-      percentage: (amount / totalExpense) * 100,
+      percentage: totalExpense > 0 ? (amount / totalExpense) * 100 : 0,
       trend: 'stable' as const
     }))
     .sort((a, b) => b.amount - a.amount)
     .slice(0, 5);
 
-  // Saúde financeira
+  // Saúde financeira baseada no mês atual
   let financialHealth: 'excellent' | 'good' | 'fair' | 'poor' = 'poor';
   if (savingsRate >= 30) financialHealth = 'excellent';
   else if (savingsRate >= 20) financialHealth = 'good';
   else if (savingsRate >= 10) financialHealth = 'fair';
 
   return {
-    averageIncome: avgIncome,
-    averageExpense: avgExpense,
+    // ✅ Retornar valores do MÊS ATUAL (não média) - igual ao Telegram
+    averageIncome: currentIncome,
+    averageExpense: currentExpense,
     savingsRate,
     topCategories,
     financialHealth,
-    monthlyGrowth: 0
+    monthlyGrowth: 0,
+    // Contexto adicional para previsões
+    historicalAvgIncome: avgIncome,
+    historicalAvgExpense: avgExpense
   };
 }
 
