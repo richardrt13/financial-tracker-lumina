@@ -288,7 +288,7 @@ async function generalAgent(query: string, context: any, history: any[]): Promis
   };
 
   const prompt = `
-Você é **Lumina**, uma assistente financeira inteligente, amigável e proativa da Lumina Financial Tracker.
+Você é **Spendly**, um assistente financeiro inteligente, amigável e proativo.
 
 **Contexto do Usuário:**
 - 💰 Economia Mensal: R$ ${(context.profile.averageIncome - context.profile.averageExpense).toFixed(2)}
@@ -331,16 +331,17 @@ Responda de forma personalizada e útil!
 // =====================================================
 
 async function orchestrateAgents(message: string, context: any, history: any[]): Promise<any> {
-  const model = genAI.getGenerativeModel({ 
-    model: 'gemini-2.5-flash',
-    generationConfig: { temperature: 0.2 }
-  });
+  try {
+    const model = genAI.getGenerativeModel({ 
+      model: 'gemini-2.5-flash',
+      generationConfig: { temperature: 0.2 }
+    });
 
-  const recentHistory = history.slice(-3).map((m: any) => 
-    `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content.substring(0, 100)}`
-  ).join('\n');
+    const recentHistory = history.slice(-3).map((m: any) => 
+      `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content.substring(0, 100)}`
+    ).join('\n');
 
-  const prompt = `
+    const prompt = `
 Você é um orquestrador de IA. Decida qual agente especializado deve responder.
 
 **Agentes Disponíveis:**
@@ -357,22 +358,48 @@ ${recentHistory}
 
 **Critérios de Escolha:**
 - Perguntas com "quanto", "qual total", "comparar" → analyzer
-- Perguntas com "quando", "em quanto tempo", "projeção" → predictor
+- Perguntas com "quando", "em quanto tempo", "projeção", "juntar" → predictor
 - Frases com "criar", "registrar", "adicionar", "quero" → executor
 - Solicitações de "insights", "dicas", "oportunidades", "melhorias" → insight
 - Saudações, dúvidas gerais, conversação → general
 
-**Retorne APENAS JSON:**
+**Retorne APENAS JSON válido, sem texto adicional:**
 {
   "agent": "analyzer|predictor|executor|insight|general",
-  "confidence": number (0-1),
+  "confidence": 0.9,
   "reasoning": "breve explicação"
 }
-  `;
+    `;
 
-  const result = await model.generateContent(prompt);
-  const decision = JSON.parse(result.response.text().replace(/```json|```/g, '').trim());
-  return decision;
+    const result = await model.generateContent(prompt);
+    let responseText = result.response.text();
+    
+    // Limpar possíveis problemas de formatação
+    responseText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    
+    // Se a resposta começar com texto, tentar extrair apenas o JSON
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      responseText = jsonMatch[0];
+    }
+    
+    const decision = JSON.parse(responseText);
+    return decision;
+  } catch (error) {
+    console.error('Erro no orquestrador:', error);
+    // Fallback: decidir baseado em palavras-chave
+    const lowerMessage = message.toLowerCase();
+    
+    if (lowerMessage.includes('quanto') || lowerMessage.includes('qual') || lowerMessage.includes('total')) {
+      return { agent: 'analyzer', confidence: 0.7, reasoning: 'Fallback: palavra-chave de análise' };
+    } else if (lowerMessage.includes('quando') || lowerMessage.includes('tempo') || lowerMessage.includes('juntar') || lowerMessage.includes('projeção')) {
+      return { agent: 'predictor', confidence: 0.7, reasoning: 'Fallback: palavra-chave de previsão' };
+    } else if (lowerMessage.includes('insight') || lowerMessage.includes('dica') || lowerMessage.includes('sugestão')) {
+      return { agent: 'insight', confidence: 0.7, reasoning: 'Fallback: palavra-chave de insight' };
+    } else {
+      return { agent: 'general', confidence: 0.5, reasoning: 'Fallback: padrão' };
+    }
+  }
 }
 
 // =====================================================

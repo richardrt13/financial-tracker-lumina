@@ -61,7 +61,7 @@ export function FinancialAssistantChatV2() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: '👋 Olá! Sou **Lumina**, sua assistente financeira inteligente.\n\nPosso te ajudar com:\n\n💰 **Análises** detalhadas dos seus gastos\n\n🔮 **Projeções** e previsões financeiras\n\n💡 **Insights** personalizados\n\n🎯 **Ações** rápidas (criar transações, definir metas)\n\nComo posso te ajudar hoje?',
+      content: '👋 Olá! Sou **Spendly**, seu assistente financeiro inteligente.\n\nPosso te ajudar com:\n\n💰 **Análises** detalhadas dos seus gastos\n\n🔮 **Projeções** e previsões financeiras\n\n💡 **Insights** personalizados\n\n🎯 **Ações** rápidas (criar transações, definir metas)\n\nComo posso te ajudar hoje?',
       timestamp: new Date()
     }
   ]);
@@ -208,8 +208,8 @@ export function FinancialAssistantChatV2() {
               <Sparkles className="h-4 w-4 text-yellow-500 absolute -top-1 -right-1 animate-pulse" />
             </div>
             <div>
-              <CardTitle className="text-xl">Lumina AI</CardTitle>
-              <CardDescription>Assistente Financeira Inteligente</CardDescription>
+              <CardTitle className="text-xl">Spendly AI</CardTitle>
+              <CardDescription>Assistente Financeiro Inteligente</CardDescription>
             </div>
           </div>
           <Badge variant="secondary" className="gap-1">
@@ -386,7 +386,7 @@ export function FinancialAssistantChatV2() {
 
           {/* Footer Info */}
           <p className="text-xs text-center text-muted-foreground">
-            Lumina usa IA avançada para analisar suas finanças • Powered by Gemini 2.5
+            Spendly usa IA avançada para analisar suas finanças • Powered by Gemini 2.5
           </p>
         </div>
       </CardContent>
