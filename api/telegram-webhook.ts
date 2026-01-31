@@ -2,18 +2,26 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenerativeAI, InlineDataPart } from '@google/generative-ai';
 
-// A constante 'months' é definida localmente para evitar erros de importação no ambiente serverless.
+// --- CONFIGURAÇÃO E CONSTANTES ---
 const months = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
 
-// Interfaces para a estrutura de dados do Telegram
+// Interfaces Telegram
 interface TelegramVoice {
   file_id: string;
   file_unique_id: string;
   duration: number;
-  mime_type: string; // Geralmente 'audio/ogg'
+  mime_type: string;
+  file_size?: number;
+}
+
+interface TelegramPhoto {
+  file_id: string;
+  file_unique_id: string;
+  width: number;
+  height: number;
   file_size?: number;
 }
 
@@ -24,6 +32,7 @@ interface TelegramMessage {
   date: number;
   text?: string;
   voice?: TelegramVoice;
+  photo?: TelegramPhoto[];
 }
 
 interface TelegramPayload {
@@ -31,252 +40,396 @@ interface TelegramPayload {
   message?: TelegramMessage;
 }
 
-// Inicialização de Clientes
+// Inicialização Clientes
 const supabaseUrl = process.env.VITE_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY!;
 const geminiApiKey = process.env.VITE_GEMINI_API_KEY!;
 const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN!;
 const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET!;
 
-if (!supabaseUrl || !supabaseServiceKey || !geminiApiKey || !telegramBotToken || !webhookSecret) {
-    console.error("ERRO CRÍTICO: Variáveis de ambiente faltando. Verifique a configuração na Vercel.");
-}
-
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const genai = new GoogleGenerativeAI(geminiApiKey);
+const modelFlash = genai.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
-async function sendTelegramMessage(chat_id: number, text: string) {
+// --- FUNÇÕES AUXILIARES ---
+
+async function sendTelegramMessage(chat_id: number, text: string, parse_mode: 'Markdown' | 'HTML' = 'Markdown') {
   const url = `https://api.telegram.org/bot${telegramBotToken}/sendMessage`;
   try {
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id, text, parse_mode: 'Markdown' }),
+      body: JSON.stringify({ chat_id, text, parse_mode }),
     });
     if (!response.ok) {
-        const errorData = await response.json();
-        console.error("Erro ao enviar mensagem para o Telegram:", errorData);
+        console.error("Erro ao enviar mensagem Telegram:", await response.text());
     }
   } catch (error) {
-      console.error("Falha de rede ao contatar a API do Telegram:", error);
+      console.error("Falha de rede (Telegram):", error);
   }
 }
 
-async function extractTransaction(text: string): Promise<any> {
-  const model = genai.getGenerativeModel({ model: 'gemini-2.5-flash' });
-  const currentYear = new Date().getFullYear();
-  const currentMonthName = months[new Date().getMonth()];
-
-  const prompt = `
-    Analise o texto a seguir para extrair uma transação financeira: "${text}".
-    Retorne APENAS um objeto JSON com os campos: type, category, amount, description, month, year.
-    - 'type' deve ser 'receita', 'despesa' ou 'investimento'.
-    - 'category' deve ser uma categoria adequada.
-    - 'amount' deve ser um número.
-    - 'description' é a descrição completa.
-    - 'month' é o nome do mês em português (Ex: "Junho"). Se não especificado, use "${currentMonthName}".
-    - 'year' é o ano com 4 dígitos. Se não especificado, use "${currentYear}".
+async function getTelegramFileBuffer(file_id: string): Promise<Buffer> {
+    const fileInfoUrl = `https://api.telegram.org/bot${telegramBotToken}/getFile?file_id=${file_id}`;
+    const fileInfoResponse = await fetch(fileInfoUrl);
+    const fileInfo = await fileInfoResponse.json();
     
-    Exemplo de saída:
-    { "type": "despesa", "category": "Alimentação", "amount": 55.40, "description": "Lanche no iFood", "month": "${currentMonthName}", "year": "${currentYear}" }
-  `;
+    if (!fileInfo.ok || !fileInfo.result.file_path) {
+      throw new Error("Não foi possível obter informações do arquivo.");
+    }
+    
+    const fileUrl = `https://api.telegram.org/file/bot${telegramBotToken}/${fileInfo.result.file_path}`;
+    const fileResponse = await fetch(fileUrl);
+    const arrayBuffer = await fileResponse.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+}
 
+// --- INTELIGÊNCIA ARTIFICIAL ---
+
+async function transcribeAudio(audioBuffer: Buffer, mimeType: string): Promise<string> {
   try {
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const jsonText = response.text().replace(/^```json\s*|```\s*$/g, '').trim();
-    return JSON.parse(jsonText);
+    const audioPart = {
+      inlineData: { data: audioBuffer.toString('base64'), mimeType },
+    };
+    const prompt = "Transcreva este áudio para texto em português. Responda apenas com a transcrição pura.";
+    const result = await modelFlash.generateContent([prompt, audioPart]);
+    const text = result.response.text();
+    return text.trim();
   } catch (error) {
-    console.error('Erro na API Gemini (extração de texto):', error);
-    return null;
+    console.error("Erro Transcrição:", error);
+    return "";
   }
 }
 
-function bufferToGenerativePart(buffer: Buffer, mimeType: string): InlineDataPart {
-  return {
-    inlineData: {
-      data: buffer.toString('base64'),
-      mimeType,
-    },
-  };
+async function analyzeImageForTransaction(imageBuffer: Buffer): Promise<any> {
+    try {
+        const imagePart = {
+            inlineData: { data: imageBuffer.toString('base64'), mimeType: 'image/jpeg' },
+        };
+        const currentYear = new Date().getFullYear();
+        const currentMonthName = months[new Date().getMonth()];
+        
+        const prompt = `
+            Analise esta imagem (cupom fiscal, fatura ou nota). Extraia os dados da transação.
+            Retorne APENAS um JSON:
+            { "type": "despesa", "category": "String (ex: Alimentação, Transporte, Saúde)", "amount": Number, "description": "Resumo do que é (ex: Restaurante X)", "month": "${currentMonthName}", "year": "${currentYear}" }
+            Se não for possível identificar, retorne null.
+        `;
+        
+        const result = await modelFlash.generateContent([prompt, imagePart]);
+        const text = result.response.text().replace(/^```json\s*|```\s*$/g, '').trim();
+        return JSON.parse(text);
+    } catch (error) {
+        console.error("Erro Vision:", error);
+        return null;
+    }
 }
 
-async function transcribeAudioWithGemini(audioBuffer: Buffer, mimeType: string): Promise<string> {
-  const model = genai.getGenerativeModel({ model: "gemini-2.5-flash" });
-  const audioPart = bufferToGenerativePart(audioBuffer, mimeType);
-  const prompt = "Transcreva este áudio para texto em português. Responda apenas com a transcrição.";
-  
-  try {
-    const result = await model.generateContent([prompt, audioPart]);
-    const response = await result.response;
-    return response.text().trim();
-  } catch (error) {
-    console.error("Erro na API Gemini (transcrição de áudio):", error);
-    throw new Error('Falha ao transcrever o áudio com a IA.');
-  }
+// Função Unificada de Entendimento de Intenção
+async function understandIntention(text: string, userId: string): Promise<{
+    isTransaction: boolean;
+    transactionData?: any;
+    isQuery: boolean;
+    queryResponse?: string;
+    queryTopics?: string[]; // Adicionando para suportar a lógica principal
+}> {
+    // 1. Buscar contexto básico financeiro para responder perguntas (se for o caso)
+    // Para economizar tokens e tempo, faremos isso apenas se o modelo pedir ou podemos fazer uma injeção de dados sumarizados.
+    // Vamos fazer uma abordagem de duas etapas simples: O modelo decide se é transação ou pergunta.
+    
+    // Obter data atual
+    const now = new Date();
+    const currentContext = `Data hoje: ${now.toLocaleDateString('pt-BR')}. Ano: ${now.getFullYear()}.`;
+
+    const prompt = `
+    ${currentContext}
+    Texto do usuário: "${text}"
+    
+    Você é um assistente financeiro pessoal. Analise o texto e decida:
+    1. É um registro de transação (gasto, receita)? (Ex: "Gastei 50 no mercado", "Almoço 30 reais", "Uber para casa").
+    2. É uma pergunta sobre finanças ou pedido de análise? (Ex: "Quanto gastei esse mês?", "Qual meu saldo?", "Resumo da semana").
+    
+    Retorne APENAS JSON.
+    Formato:
+    {
+        "isTransaction": boolean,
+        "transactionData": { "type": "receita"|"despesa", "category": "String", "amount": number, "description": "String" } (ou null se não for transação),
+        "isQuery": boolean,
+        "queryTopics": ["saldo" | "gastos_categoria" | "resumo_mensal" | "geral"] (identifique o que o usuario quer saber, array de strings)
+    }
+    Para categorias, use padrões como: Alimentação, Transporte, Casa, Lazer, Saúde, Educação, Trabalho.
+    `;
+
+    try {
+        const result = await modelFlash.generateContent(prompt);
+        const jsonText = result.response.text().replace(/^```json\s*|```\s*$/g, '').trim();
+        return JSON.parse(jsonText);
+    } catch (e) {
+        console.error("Erro na classificação de intenção:", e);
+        return { isTransaction: false, isQuery: false }; // Fallback
+    }
+}
+
+async function generateQueryResponse(userId: string, topics: string[]): Promise<string> {
+    // Busca dados no Supabase baseado nos tópicos
+    const now = new Date();
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    
+    let contextData = "";
+
+    // Queries comuns
+    if (topics.includes('saldo') || topics.includes('resumo_mensal') || topics.includes('geral')) {
+        const { data: transitions } = await supabase
+            .from('transactions')
+            .select('type, amount, category, created_at')
+            .eq('user_id', userId)
+            .gte('date', firstDayOfMonth); // Assumindo campo 'date' ou usar created_at
+
+        if (transitions) {
+            const despesas = transitions.filter(t => t.type === 'despesa').reduce((acc, curr) => acc + Number(curr.amount), 0);
+            const receitas = transitions.filter(t => t.type === 'receita').reduce((acc, curr) => acc + Number(curr.amount), 0);
+            contextData += `Resumo Mês Atual: Receitas R$ ${receitas.toFixed(2)}, Despesas R$ ${despesas.toFixed(2)}. Saldo do mês: R$ ${(receitas - despesas).toFixed(2)}. `;
+        }
+    }
+    
+    if (topics.includes('gastos_categoria')) {
+        const { data: byCategory } = await supabase
+             .from('transactions')
+             .select('category, amount')
+             .eq('user_id', userId)
+             .eq('type', 'despesa')
+             .gte('date', firstDayOfMonth);
+             
+        if (byCategory) {
+            const catTotals: Record<string, number> = {};
+            byCategory.forEach(t => { catTotals[t.category] = (catTotals[t.category] || 0) + Number(t.amount); });
+            contextData += `Gastos por Categoria este mês: ${JSON.stringify(catTotals)}. `;
+        }
+    }
+
+    // Gerar resposta final com LLM
+    const prompt = `
+        Com base nestes dados: ${contextData || "Sem dados recentes."}
+        Responda a pergunta do usuário de forma natural, amigável e resumida.
+        Se não tiver dados, diga que não encontrou transações recentes.
+    `;
+    const result = await modelFlash.generateContent(prompt);
+    return result.response.text();
 }
 
 
-// O handler principal da Vercel Function
-async function handler(
-  request: VercelRequest,
-  response: VercelResponse,
-) {
+// --- PROCESSAMENTO PRINCIPAL ---
+
+export default async function handler(request: VercelRequest, response: VercelResponse) {
+  // Autenticação Webhook
   const secret = request.headers['x-telegram-bot-api-secret-token'];
-  if (secret !== webhookSecret) {
-    return response.status(401).send('Unauthorized');
-  }
-
-  if (request.method !== 'POST') {
-    return response.status(405).send('Method Not Allowed');
-  }
+  if (secret !== webhookSecret) return response.status(401).send('Unauthorized');
+  if (request.method !== 'POST') return response.status(405).send('Method Not Allowed');
 
   const payload: TelegramPayload = request.body;
   const message = payload.message;
 
-  if (!message) {
-    return response.status(200).send('OK: No message payload');
-  }
-
-  const { chat } = message;
-  let commandText = message.text; // Pode ser undefined
+  if (!message) return response.status(200).send('OK: No message');
+  
+  const chat = message.chat;
+  const chatId = chat.id;
 
   try {
-    // Processamento de Áudio
-    if (message.voice) {
-      await sendTelegramMessage(chat.id, 'Recebi seu áudio, vou transcrever...');
-      const fileInfoUrl = `https://api.telegram.org/bot${telegramBotToken}/getFile?file_id=${message.voice.file_id}`;
-      const fileInfoResponse = await fetch(fileInfoUrl);
-      const fileInfo = await fileInfoResponse.json();
-      if (!fileInfo.ok || !fileInfo.result.file_path) {
-        throw new Error("Não foi possível obter informações do arquivo de áudio.");
-      }
-      
-      const fileUrl = `https://api.telegram.org/file/bot${telegramBotToken}/${fileInfo.result.file_path}`;
-      const audioResponse = await fetch(fileUrl);
-      const audioArrayBuffer = await audioResponse.arrayBuffer();
-      const audioBuffer = Buffer.from(audioArrayBuffer);
-      
-      const transcribedText = await transcribeAudioWithGemini(audioBuffer, message.voice.mime_type || 'audio/ogg');
-      if (!transcribedText) {
-        await sendTelegramMessage(chat.id, "Não consegui entender o que foi dito no áudio.");
-        return response.status(200).send('Transcription failed');
-      }
-      await sendTelegramMessage(chat.id, `Entendi: "_${transcribedText}_"\n\nAgora vou processar...`);
-      commandText = transcribedText;
-    }
-
-    if (!commandText) {
-        return response.status(200).send('OK: No text command to process');
-    }
-
-    // Lógica para comando /start (Vinculação de Conta)
-    if (commandText.startsWith('/start')) {
-      const parts = commandText.split(' ');
-      if (parts.length > 1 && parts[1]) {
+    // 0. Verificar Vinculação do Usuário
+    let userData = null;
+    
+    // Check rápido para /start com parametro
+    if (message.text?.startsWith('/start ')) {
+        // Lógica de vinculação
+        const parts = message.text.split(' ');
         const userIdFromCommand = parts[1];
-        let defaultBudgetIdToSet: string | null = null;
-        let botResponseMessage = '✅ Conta vinculada com sucesso!';
-
-        const { data: userBudgets, error: budgetError } = await supabase
-            .from('budgets')
-            .select('id, name')
-            .eq('user_id', userIdFromCommand)
-            .order('order_position', { ascending: true })
-            .limit(1);
-
-        if (budgetError) {
-            console.error("Erro ao buscar orçamentos durante a vinculação:", budgetError);
-            botResponseMessage += '\n\nConfigure um orçamento padrão no app em "Minha Conta".';
-        } else if (userBudgets && userBudgets.length > 0) {
-            defaultBudgetIdToSet = userBudgets[0].id;
-            botResponseMessage += `\n\nO orçamento *"${userBudgets[0].name}"* foi definido como padrão. Você pode alterar isso no app.`;
-        } else {
-             botResponseMessage += `\n\nLembre-se de criar seu primeiro orçamento no aplicativo!`;
-        }
-
-        const { error: upsertError } = await supabase
-          .from('telegram_links')
-          .upsert({ chat_id: chat.id, user_id: userIdFromCommand, default_budget_id: defaultBudgetIdToSet }, { onConflict: 'chat_id' });
-
-        if (upsertError) throw new Error(`Não foi possível salvar a vinculação: ${upsertError.message}`);
         
-        await sendTelegramMessage(chat.id, botResponseMessage);
-        return response.status(200).send('Link successful');
-      } else {
-        await sendTelegramMessage(chat.id, 'Bem-vindo! Para vincular sua conta, acesse a seção "Minha Conta" no app Spendly.');
-        return response.status(200).send('Welcome message sent');
-      }
+        const { data: userBudgets } = await supabase.from('budgets').select('id, name').eq('user_id', userIdFromCommand).limit(1);
+        let defaultBudgetId = userBudgets?.[0]?.id || null;
+
+        await supabase.from('telegram_links').upsert({ 
+            chat_id: chatId, 
+            user_id: userIdFromCommand, 
+            default_budget_id: defaultBudgetId 
+        }, { onConflict: 'chat_id' });
+
+        await sendTelegramMessage(chatId, `✅ *Conta Vinculada!* \n\nAgora você pode:\n- Escrever gastos ("Almoço 20 reais")\n- Mandar áudios\n- Mandar fotos de comprovantes\n- Perguntar "Quanto gastei esse mês?"`);
+        return response.status(200).send('Linked');
     }
 
-    // Lógica para Ações Pendentes (Criar Categoria)
-    const { data: pendingAction, error: pendingError } = await supabase
-        .from('pending_telegram_actions')
-        .select('*').eq('chat_id', chat.id).single();
-    if (pendingError && pendingError.code !== 'PGRST116') throw pendingError;
+    // Buscar usuário vinculado
+    const { data: linkData } = await supabase.from('telegram_links').select('*').eq('chat_id', chatId).single();
+    
+    if (!linkData) {
+        await sendTelegramMessage(chatId, "⚠️ Sua conta não está vinculada. Acesse o app Lumina > Minha Conta > Telegram para obter o link.");
+        return response.status(200).send('Not Linked');
+    }
+    userData = linkData;
+    const userId = userData.user_id;
+    const budgetId = userData.default_budget_id;
 
+    if (!budgetId) {
+        await sendTelegramMessage(chatId, "⚠️ Você precisa definir um orçamento padrão no App para registrar transações.");
+        return response.status(200).send('No Budget');
+    }
+
+    // 1. Comandos Especiais (/desfazer, /resumo)
+    
+    // --- DESFAZER ---
+    if (message.text?.trim().toLowerCase() === '/desfazer') {
+        // Buscar ultima transação deste usuário criada recentemente (ex: ultimos 10 min)
+         const { data: lastTrans } = await supabase
+            .from('transactions')
+            .select('id, description, amount, created_at')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+         if (lastTrans) {
+             await supabase.from('transactions').delete().eq('id', lastTrans.id);
+             await sendTelegramMessage(chatId, `🗑️ Transação *"${lastTrans.description}"* (R$ ${lastTrans.amount}) apagada.`);
+         } else {
+             await sendTelegramMessage(chatId, "Não encontrei transações recentes para apagar.");
+         }
+         return response.status(200).send('Undo');
+    }
+
+    // --- RESUMO ---
+    if (message.text?.trim().toLowerCase() === '/resumo') {
+        const resposta = await generateQueryResponse(userId, ['resumo_mensal']);
+        await sendTelegramMessage(chatId, `📊 *Resumo Rápido:*\n${resposta}`);
+        return response.status(200).send('Summary');
+    }
+
+    // --- AÇÃO DE PENDENCIA (SIM/NÃO) ---
+    const { data: pendingAction } = await supabase.from('pending_telegram_actions').select('*').eq('chat_id', chatId).single();
     if (pendingAction) {
         await supabase.from('pending_telegram_actions').delete().eq('id', pendingAction.id);
-        if (commandText.toLowerCase().trim() === 'sim') {
-            if (pendingAction.action_type === 'create_category') {
-                const transactionPayload = pendingAction.payload as any;
-                await supabase.from('categories').insert({ user_id: transactionPayload.user_id, name: transactionPayload.category, type: transactionPayload.type });
-                await supabase.from('transactions').insert(transactionPayload);
-                await sendTelegramMessage(chat.id, `✅ Categoria *"${transactionPayload.category}"* criada e transação registrada com sucesso!`);
-                supabase.functions.invoke('process-queue').catch(console.error);
-                return response.status(200).send('Pending action resolved: YES');
-            }
+        const textLimpo = message.text?.toLowerCase().trim();
+        if (textLimpo === 'sim' || textLimpo === 's' || textLimpo === 'yes') {
+             if (pendingAction.action_type === 'create_category') {
+                const payload = pendingAction.payload as any;
+                // Criar categoria e transação
+                await supabase.from('categories').insert({ user_id: userId, name: payload.category, type: payload.type });
+                await supabase.from('transactions').insert(payload);
+                await sendTelegramMessage(chatId, `✅ Categoria *Create* e transação registrada!`);
+             }
         } else {
-            await sendTelegramMessage(chat.id, 'Ok, a operação foi cancelada.');
-            return response.status(200).send('Pending action resolved: NO');
+            await sendTelegramMessage(chatId, "❌ Operação cancelada.");
+        }
+        return response.status(200).send('Pending Resolved');
+    }
+
+
+    // 2. INPUT DE MÍDIA (Voz ou Imagem)
+    let processedText = message.text;
+    let transactionFromImage = null;
+
+    if (message.voice) {
+        await sendTelegramMessage(chatId, "🎧 Ouvindo...");
+        const buffer = await getTelegramFileBuffer(message.voice.file_id);
+        processedText = await transcribeAudio(buffer, message.voice.mime_type);
+        await sendTelegramMessage(chatId, `🗣️ Entendi: _"${processedText}"_`);
+    }
+
+    else if (message.photo && message.photo.length > 0) {
+        await sendTelegramMessage(chatId, "📸 Analisando imagem...");
+        // Pegar a maior imagem (ultimo item do array)
+        const photo = message.photo[message.photo.length - 1];
+        const buffer = await getTelegramFileBuffer(photo.file_id);
+        transactionFromImage = await analyzeImageForTransaction(buffer);
+        
+        if (!transactionFromImage) {
+            await sendTelegramMessage(chatId, "⚠️ Não consegui ler os dados da imagem.");
+            return response.status(200).send('Image Fail');
         }
     }
+
+    // Se não tem texto nem dados de imagem, encerra
+    if (!processedText && !transactionFromImage) {
+        return response.status(200).send('Nothing to process');
+    }
+
+    // 3. INTENÇÃO & EXECUÇÃO
     
-    // Lógica para transações normais
-    const { data: userData, error: userError } = await supabase.from('telegram_links').select('user_id, default_budget_id').eq('chat_id', chat.id).single();
-    if (userError || !userData) {
-      await sendTelegramMessage(chat.id, `Sua conta do Telegram não está vinculada. Acesse o app para fazer a vinculação.`);
-      return response.status(200).send('User not linked');
+    // Se veio de imagem, já temos os dados da transação
+    if (transactionFromImage) {
+        await registerTransaction(userId, budgetId, chatId, transactionFromImage);
+        return response.status(200).send('Image Transaction Saved');
     }
 
-    const { user_id, default_budget_id } = userData;
-    if (!default_budget_id) {
-        await sendTelegramMessage(chat.id, `Você precisa definir um orçamento padrão no app (em "Minha Conta") para criar transações.`);
-        return response.status(200).send('Default budget not set');
+    // Se é texto (original ou transcrito), analisa a intenção
+    if (processedText) {
+        const intention = await understandIntention(processedText, userId);
+        
+        if (intention.isTransaction && intention.transactionData) {
+            await registerTransaction(userId, budgetId, chatId, intention.transactionData);
+        } else if (intention.isQuery && intention.queryTopics) {
+             await sendTelegramMessage(chatId, "🔍 Consultando dados...");
+             const answer = await generateQueryResponse(userId, intention.queryTopics);
+             await sendTelegramMessage(chatId, answer);
+        } else {
+            await sendTelegramMessage(chatId, "🤔 Não entendi se isso é um gasto ou uma pergunta. Tente ser mais claro. Ex: 'Gastei 15 na padaria' ou 'Qual meu saldo?'");
+        }
     }
 
-    if (!message.voice) await sendTelegramMessage(chat.id, 'Analisando seu comando...');
-    const transactionData = await extractTransaction(commandText);
-    if (!transactionData || !transactionData.amount || !transactionData.category || !transactionData.type) {
-      await sendTelegramMessage(chat.id, 'Não consegui extrair os detalhes da transação. Tente ser mais específico.');
-      return response.status(200).send('AI extraction failed');
-    }
-
-    // Validação da Categoria
-    const { data: categoryData, error: categoryError } = await supabase.from('categories').select('name').eq('user_id', user_id).ilike('name', transactionData.category).single();
-    if (categoryError && categoryError.code !== 'PGRST116') throw categoryError;
+    return response.status(200).send('Done');
     
-    if (!categoryData) {
-        const pendingPayload = { user_id, budget_id: default_budget_id, ...transactionData, is_completed: false };
-        await supabase.from('pending_telegram_actions').insert({ chat_id: chat.id, action_type: 'create_category', payload: pendingPayload });
-        await sendTelegramMessage(chat.id, `A categoria *"${transactionData.category}"* não foi encontrada. Deseja criá-la e registrar a transação?\n\nResponda com *sim* ou *não*.`);
-        return response.status(200).send('Pending category creation');
-    }
-    
-    // Salvar transação com categoria existente
-    const { error: insertError } = await supabase.from('transactions').insert({ user_id, budget_id: default_budget_id, ...transactionData, is_completed: false });
-    if (insertError) throw insertError;
-    supabase.functions.invoke('process-queue').catch(console.error);
-    const confirmationText = `✅ Transação registrada na categoria existente *"${transactionData.category}"*!`;
-    await sendTelegramMessage(chat.id, confirmationText);
-
-    return response.status(200).send('Success');
-
-  } catch (error: any) {
-    console.error('Erro no webhook do Telegram:', error);
-    await sendTelegramMessage(chat.id, `Ocorreu um erro ao processar sua solicitação.`);
-    return response.status(200).send('Error processed');
+  } catch (error) {
+    console.error('CRITICAL ERROR:', error);
+    if(message?.chat?.id) await sendTelegramMessage(message.chat.id, "😵 Ocorreu um erro interno. Tente novamente mais tarde.");
+    return response.status(500).send('Error');
   }
 }
 
-export default handler;
+
+// Função auxiliar para Registrar e Validar Transação
+async function registerTransaction(userId: string, budgetId: string, chatId: number, data: any) {
+    if(!data.amount || !data.category) {
+         await sendTelegramMessage(chatId, "⚠️ Dados incompletos. Tente novamente.");
+         return;
+    }
+
+    // Verificar Categoria
+    const { data: catData } = await supabase
+        .from('categories')
+        .select('name')
+        .eq('user_id', userId)
+        .ilike('name', data.category)
+        .single();
+    
+    const finalData = {
+        user_id: userId,
+        budget_id: budgetId,
+        type: data.type || 'despesa',
+        category: data.category, // Categoria original sugerida ou existente
+        amount: data.amount,
+        description: data.description || 'Gasto via Telegram',
+        date: new Date().toISOString(),
+        payment_status: 'paid' 
+    };
+
+    if (!catData) {
+        // Fluxo de criar categoria pendente
+        await supabase.from('pending_telegram_actions').insert({
+            chat_id: chatId,
+            action_type: 'create_category',
+            payload: finalData
+        });
+        await sendTelegramMessage(chatId, `A categoria *"${data.category}"* é nova. Deseja criá-la e salvar o gasto? (Sim/Não)`);
+    } else {
+        // Salvar direto
+        // Ajustar nome da categoria para o oficial do banco
+        finalData.category = catData.name;
+        
+        const { error } = await supabase.from('transactions').insert(finalData);
+        
+        if (error) {
+            console.error("Erro insert:", error);
+            await sendTelegramMessage(chatId, "Erro ao salvar no banco de dados.");
+        } else {
+            await sendTelegramMessage(chatId, `✅ *R$ ${data.amount}* em ${data.category}\n"${data.description}"\n\n(/desfazer para cancelar)`);
+        }
+    }
+}
