@@ -231,7 +231,7 @@ async function understandIntention(text: string, userId: string): Promise<{
     }
 }
 
-async function generateQueryResponse(userId: string, topics: string[], chatId?: number): Promise<string> {
+async function generateQueryResponse(userId: string, topics: string[], chatId?: number, userQuery?: string): Promise<string> {
     // Busca dados no Supabase baseado nos tópicos
     const now = new Date();
     
@@ -306,11 +306,17 @@ async function generateQueryResponse(userId: string, topics: string[], chatId?: 
     const prompt = `
         Você é Spendly, assistente financeiro profissional do Telegram.
         
-        Dados financeiros: ${contextData}${historyContext}
+        Pergunta do usuário: "${userQuery || 'resumo financeiro'}"
         
-        Responda de forma profissional, clara e objetiva (2-3 linhas).
-        Use no máximo 1 emoji por resposta, apenas se muito relevante.
-        Foque em dados concretos e informações acionáveis.
+        Dados financeiros disponíveis: ${contextData}${historyContext}
+        
+        INSTRUÇÕES:
+        - Responda DIRETAMENTE à pergunta do usuário
+        - Use 2-3 linhas, seja objetivo e claro
+        - Cite valores específicos (ex: R$ 1.234,50)
+        - Use no máximo 1 emoji, apenas se essencial
+        - Se perguntou quanto gastou, liste os valores das maiores categorias
+        - Foque em informações acionáveis
     `;
     const llmResponse = await generateText(prompt, 'simple', 0.7, 300);
     return llmResponse.content;
@@ -470,7 +476,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
             await registerTransaction(userId, budgetId, chatId, intention.transactionData);
         } else if (intention.isQuery && intention.queryTopics) {
              await sendTelegramMessage(chatId, "🔍 Consultando dados...");
-             const answer = await generateQueryResponse(userId, intention.queryTopics, chatId); // ✅ Passar chatId
+             const answer = await generateQueryResponse(userId, intention.queryTopics, chatId, processedText); // ✅ Passar texto original
              await sendTelegramMessage(chatId, answer);
              await saveTelegramMessage(chatId, 'assistant', answer); // ✅ Salvar resposta
         } else {
