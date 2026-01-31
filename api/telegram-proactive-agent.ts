@@ -30,6 +30,7 @@ interface FinancialContext {
     balance: number;
     transactionCount: number;
     avgDailyExpense: number;
+    transactions: any[]; // 🔥 Transações completas
   };
   
   // Comparação com mês anterior
@@ -37,6 +38,16 @@ interface FinancialContext {
     income: number;
     expense: number;
     balance: number;
+    transactionCount: number;
+  };
+  
+  // Histórico de 3 meses
+  threeMonths: {
+    income: number;
+    expense: number;
+    balance: number;
+    transactionCount: number;
+    transactions: any[]; // 🔥 Transações dos últimos 3 meses
   };
   
   // Tendências
@@ -60,6 +71,9 @@ interface FinancialContext {
     lowSavings: boolean;
     highCategorySpending: string | null;
   };
+  
+  // Orçamentos
+  budgets: any[]; // 🔥 Orçamentos do usuário
   
   // Histórico de mensagens proativas
   lastProactiveMessage?: number; // timestamp
@@ -112,22 +126,43 @@ async function getFinancialContext(userId: string, chatId: number): Promise<Fina
       start: new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0],
       end: new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0],
     };
+    
+    const lastThreeMonths = {
+      start: new Date(now.getFullYear(), now.getMonth() - 3, 1).toISOString().split('T')[0],
+      end: new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0],
+    };
 
     // Buscar transações do mês atual
     const { data: currentTxs } = await supabase
       .from('transactions')
-      .select('type, amount, category, date')
+      .select('*') // 🔥 BUSCAR TODOS OS DADOS
       .eq('user_id', userId)
       .gte('date', currentMonth.start)
-      .lte('date', currentMonth.end);
+      .lte('date', currentMonth.end)
+      .order('date', { ascending: false });
 
     // Buscar transações do mês anterior
     const { data: lastTxs } = await supabase
       .from('transactions')
-      .select('type, amount, category, date')
+      .select('*')
       .eq('user_id', userId)
       .gte('date', lastMonth.start)
       .lte('date', lastMonth.end);
+    
+    // 🔥 Buscar últimos 3 meses para análise de tendências
+    const { data: threeMonthsTxs } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('date', lastThreeMonths.start)
+      .lte('date', lastThreeMonths.end)
+      .order('date', { ascending: false });
+    
+    // 🔥 Buscar orçamentos do usuário
+    const { data: budgets } = await supabase
+      .from('budgets')
+      .select('*')
+      .eq('user_id', userId);
 
     if (!currentTxs) return null;
 
@@ -176,6 +211,11 @@ async function getFinancialContext(userId: string, chatId: number): Promise<Fina
     const lastProactiveMessage = await redis.get(lastMessageKey) as number | null;
     const proactiveMessageCount = (await redis.get(countKey) as number) || 0;
 
+    // Calcular métricas dos últimos 3 meses
+    const threeMonthsIncome = threeMonthsTxs?.filter(t => t.type === 'receita').reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+    const threeMonthsExpense = threeMonthsTxs?.filter(t => t.type === 'despesa').reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+    const threeMonthsBalance = threeMonthsIncome - threeMonthsExpense;
+
     // Dias desde o início do mês
     const daysInMonth = now.getDate();
     const avgDailyExpense = daysInMonth > 0 ? currentExpense / daysInMonth : 0;
@@ -189,11 +229,20 @@ async function getFinancialContext(userId: string, chatId: number): Promise<Fina
         balance: currentBalance,
         transactionCount: currentTxs.length,
         avgDailyExpense,
+        transactions: currentTxs || [], // 🔥 Transações completas
       },
       lastMonth: {
         income: lastIncome,
         expense: lastExpense,
         balance: lastBalance,
+        transactionCount: lastTxs?.length || 0,
+      },
+      threeMonths: {
+        income: threeMonthsIncome,
+        expense: threeMonthsExpense,
+        balance: threeMonthsBalance,
+        transactionCount: threeMonthsTxs?.length || 0,
+        transactions: threeMonthsTxs || [], // 🔥 Últimos 3 meses
       },
       trends: {
         expenseGrowth,
@@ -202,6 +251,7 @@ async function getFinancialContext(userId: string, chatId: number): Promise<Fina
       },
       topCategories,
       alerts,
+      budgets: budgets || [], // 🔥 Orçamentos do usuário
       lastProactiveMessage: lastProactiveMessage || undefined,
       proactiveMessageCount,
     };
@@ -217,25 +267,40 @@ async function generateProactiveInsight(context: FinancialContext): Promise<Proa
     const hoursSinceLastMessage = context.lastProactiveMessage 
       ? (now - context.lastProactiveMessage) / (1000 * 60 * 60)
       : 24;
+    
+    const currentHour = new Date().getHours();
+    const currentDay = new Date().getDate();
 
     // Regras de throttling
     if (hoursSinceLastMessage < 6) {
-      // Não enviar se última mensagem foi há menos de 6 horas
+      console.log(`[${context.userId}] Throttle: última mensagem há ${hoursSinceLastMessage.toFixed(1)}h`);
       return null;
     }
 
     if (context.proactiveMessageCount >= 3) {
-      // Máximo 3 mensagens proativas por dia
+      console.log(`[${context.userId}] Throttle: já enviou ${context.proactiveMessageCount} mensagens hoje`);
+      return null;
+    }
+    
+    // Horário inadequado (22h-7h)
+    if (currentHour >= 22 || currentHour < 7) {
+      console.log(`[${context.userId}] Horário inadequado: ${currentHour}h`);
+      return null;
+    }
+    
+    // Sem dados suficientes
+    if (context.currentMonth.transactionCount === 0) {
+      console.log(`[${context.userId}] Sem transações no mês atual`);
       return null;
     }
 
     // Montar contexto para a IA
     const prompt = `
-Você é Spendly, um assistente financeiro profissional via Telegram. Analise a situação financeira do usuário e decida se deve enviar uma mensagem proativa.
+Você é Spendly, um assistente financeiro profissional via Telegram. Analise TODOS os dados do usuário e gere insights valiosos.
 
-**CONTEXTO FINANCEIRO:**
+**DADOS DISPONÍVEIS:**
 
-**Mês Atual:**
+**Mês Atual (${new Date().toLocaleDateString('pt-BR', { month: 'long' })}):**
 - Receitas: R$ ${context.currentMonth.income.toFixed(2)}
 - Despesas: R$ ${context.currentMonth.expense.toFixed(2)}
 - Saldo: R$ ${context.currentMonth.balance.toFixed(2)}
@@ -243,17 +308,31 @@ Você é Spendly, um assistente financeiro profissional via Telegram. Analise a 
 - Gasto médio diário: R$ ${context.currentMonth.avgDailyExpense.toFixed(2)}
 
 **Mês Anterior:**
-- Receitas: R$ ${context.lastMonth.income.toFixed(2)}
+- Receitas: R$ ${context.lastMonth.income.toFixed(2)} (${context.lastMonth.transactionCount} transações)
 - Despesas: R$ ${context.lastMonth.expense.toFixed(2)}
 - Saldo: R$ ${context.lastMonth.balance.toFixed(2)}
+
+**Últimos 3 Meses (tendência):**
+- Receitas: R$ ${context.threeMonths.income.toFixed(2)}
+- Despesas: R$ ${context.threeMonths.expense.toFixed(2)}
+- Saldo acumulado: R$ ${context.threeMonths.balance.toFixed(2)}
+- Total de transações: ${context.threeMonths.transactionCount}
 
 **Tendências:**
 - Crescimento de despesas: ${context.trends.expenseGrowth.toFixed(1)}%
 - Crescimento de receitas: ${context.trends.incomeGrowth.toFixed(1)}%
 - Taxa de economia: ${context.trends.savingsRate.toFixed(1)}%
 
-**Top Categorias de Gasto:**
+**Top Categorias de Gasto (Mês Atual):**
 ${context.topCategories.map(c => `- ${c.category}: R$ ${c.amount.toFixed(2)} (${c.percentage.toFixed(1)}%)`).join('\n')}
+
+**Últimas 10 Transações:**
+${context.currentMonth.transactions.slice(0, 10).map(t => 
+  `- ${t.type === 'receita' ? '+' : '-'}R$ ${Number(t.amount).toFixed(2)} | ${t.category} | ${t.description || 'Sem descrição'} | ${new Date(t.date).toLocaleDateString('pt-BR')}`
+).join('\n')}
+
+**Orçamentos Configurados:**
+${context.budgets.length > 0 ? context.budgets.map(b => `- ${b.name}`).join('\n') : 'Nenhum orçamento configurado'}
 
 **Alertas Identificados:**
 - Gastos > Receitas: ${context.alerts.budgetOverrun ? 'SIM ⚠️' : 'Não'}
@@ -269,23 +348,42 @@ ${context.topCategories.map(c => `- ${c.category}: R$ ${c.amount.toFixed(2)} (${
 
 **SUA MISSÃO:**
 
-Analise CRITICAMENTE se vale a pena enviar uma mensagem proativa agora. Considere:
+**SUA MISSÃO:**
 
-1. **Relevância**: O insight é útil e acionável?
-2. **Urgência**: Há algo que precisa de atenção imediata?
-3. **Valor**: O usuário vai se beneficiar desta informação agora?
-4. **Timing**: É o momento certo (hora do dia, contexto)?
-5. **Novidade**: É algo que o usuário não sabe ou precisa ser lembrado?
+Analise TODOS os dados disponíveis e gere um insight valioso. Seja PROATIVO e criativo!
 
-**CRITÉRIOS PARA ENVIAR:**
-- ✅ Alertas críticos (gastos > receitas, aumento brusco)
-- ✅ Oportunidades claras de economia
-- ✅ Celebrações (meta atingida, economia recorde)
-- ✅ Lembretes importantes (final do mês, padrões)
-- ❌ Informações triviais ou óbvias
-- ❌ Spam (já enviou mensagem recente sobre o mesmo)
+**VOCÊ TEM ACESSO A:**
+- ✅ Transações individuais completas (valores, categorias, descrições, datas)
+- ✅ Tendências de 3 meses
+- ✅ Padrões de gastos por categoria
+- ✅ Comparação mês atual vs anterior
+- ✅ Orçamentos configurados
 
-**HORA ATUAL:** ${new Date().getHours()}h (considere se é horário apropriado)
+**TIPOS DE INSIGHTS QUE VOCÊ PODE GERAR:**
+1. **Alertas**: Gastos ultrapassaram receitas, categoria dominante, aumento brusco
+2. **Padrões**: "Você gasta R$ X toda semana em Y", "Sempre gasta mais no início do mês"
+3. **Oportunidades**: "Reduzindo 20% em X, economiza R$ Y/ano"
+4. **Celebrações**: Taxa de economia alta, meta atingida, melhor mês
+5. **Comparações**: "Este mês vs mês passado", "Gastos em X caíram Y%"
+6. **Projeções**: "No ritmo atual, vai economizar R$ X este mês"
+7. **Análises**: "Sua maior despesa é X, representando Y% do total"
+8. **Lembretes**: Final do mês, padrões recorrentes
+
+**CRITÉRIOS PARA ENVIAR (pelo menos 1):**
+- ✅ Alertas críticos ou oportunidades claras
+- ✅ Padrão interessante identificado nas transações
+- ✅ Final do mês (dia 25+) - faça um resumo
+- ✅ Primeira mensagem (nunca enviou) - apresente-se
+- ✅ Insight único que o usuário não perceberia sozinho
+- ✅ Dado surpreendente ou celebração
+- ✅ 5+ transações disponíveis para análise
+
+**NÃO ENVIAR APENAS SE:**
+- ❌ Sem dados relevantes (0 transações)
+- ❌ Nada de novo para compartilhar
+- ❌ Insight trivial ou óbvio
+
+**HORA ATUAL:** ${new Date().getHours()}h - Dia ${new Date().getDate()} de ${new Date().toLocaleDateString('pt-BR', { month: 'long' })}
 
 ---
 
@@ -295,7 +393,7 @@ Analise CRITICAMENTE se vale a pena enviar uma mensagem proativa agora. Consider
   "shouldSend": true/false,
   "priority": "high" | "medium" | "low",
   "category": "alert" | "tip" | "celebration" | "reminder" | "analysis",
-  "message": "Mensagem em português, 2-3 linhas, tom profissional e objetivo. Use NO MÁXIMO 2 emojis.",
+  "message": "Mensagem em português, 2-3 linhas, tom profissional. Use NO MÁXIMO 2 emojis. Seja específico com valores.",
   "reasoning": "Por que decidiu enviar (ou não enviar)"
 }
 
