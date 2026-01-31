@@ -25,19 +25,20 @@ interface TelegramPhoto {
   file_size?: number;
 }
 
-interface TelegramMessage {
-  message_id: number;
-  from: { id: number; is_bot: boolean; first_name: string; username: string; };
-  chat: { id: number; first_name: string; username: string; type: 'private'; };
-  date: number;
-  text?: string;
-  voice?: TelegramVoice;
-  photo?: TelegramPhoto[];
-}
-
-interface TelegramPayload {
-  update_id: number;
-  message?: TelegramMessage;
+// Interface auxiliar para o retorno da IA
+interface TransactionIntention {
+    isTransaction: boolean;
+    transactionData?: {
+        type: 'receita' | 'despesa';
+        category: string;
+        amount: number;
+        description: string;
+        date?: string; // YYYY-MM-DD
+        installments?: number; // Número de parcelas/recorrências (padrão 1)
+        recurrenceType?: 'mensal' | 'anual'; // (Opcional, assumindo mensal por padrão)
+    } | null;
+    isQuery: boolean;
+    queryTopics?: string[];
 }
 
 // Inicialização Clientes
@@ -112,7 +113,13 @@ async function analyzeImageForTransaction(imageBuffer: Buffer): Promise<any> {
         const prompt = `
             Analise esta imagem (cupom fiscal, fatura ou nota). Extraia os dados da transação.
             Retorne APENAS um JSON:
-            { "type": "despesa", "category": "String (ex: Alimentação, Transporte, Saúde)", "amount": Number, "description": "Resumo do que é (ex: Restaurante X)", "month": "${currentMonthName}", "year": "${currentYear}" }
+            { 
+               "type": "despesa", 
+               "category": "String (ex: Alimentação, Transporte, Saúde)", 
+               "amount": Number, 
+               "description": "Resumo do que é (ex: Restaurante X)", 
+               "date": "YYYY-MM-DD" (Busque data de emissão. Se não achar, não envie ou envie null)
+            }
             Se não for possível identificar, retorne null.
         `;
         
@@ -146,16 +153,25 @@ async function understandIntention(text: string, userId: string): Promise<{
     Texto do usuário: "${text}"
     
     Você é um assistente financeiro pessoal. Analise o texto e decida:
-    1. É um registro de transação (gasto, receita)? (Ex: "Gastei 50 no mercado", "Almoço 30 reais", "Uber para casa").
-    2. É uma pergunta sobre finanças ou pedido de análise? (Ex: "Quanto gastei esse mês?", "Qual meu saldo?", "Resumo da semana").
+    1. É um registro de transação? (Ex: "Gastei 50 no mercado", "Netflix mensal 20 reais").
+       - Se mencionar recorrência (ex: "parcelado em 3x", "por 12 meses", "mensalmente"), extraia 'installments'.
+       - Se mencionar data específica (ex: "dia 15", "ontem", "mês passado"), calcule e preencha 'date' (YYYY-MM-DD).
+    2. É uma pergunta sobre finanças? (Ex: "Quanto gastei esse mês?", "Qual meu saldo?", "Resumo da semana").
     
     Retorne APENAS JSON.
     Formato:
     {
         "isTransaction": boolean,
-        "transactionData": { "type": "receita"|"despesa", "category": "String", "amount": number, "description": "String" } (ou null se não for transação),
+        "transactionData": { 
+            "type": "receita"|"despesa", 
+            "category": "String", 
+            "amount": number, 
+            "description": "String",
+            "date": "YYYY-MM-DD" (Obrigatório se mencionado, senão null),
+            "installments": number (Padrão 1. Se for '3x' ou '3 meses', é 3)
+        } (ou null se não for transação),
         "isQuery": boolean,
-        "queryTopics": ["saldo" | "gastos_categoria" | "resumo_mensal" | "geral"] (identifique o que o usuario quer saber, array de strings)
+        "queryTopics": ["saldo" | "gastos_categoria" | "resumo_mensal" | "geral"]
     }
     Para categorias, use padrões como: Alimentação, Transporte, Casa, Lazer, Saúde, Educação, Trabalho.
     `;
@@ -173,22 +189,28 @@ async function understandIntention(text: string, userId: string): Promise<{
 async function generateQueryResponse(userId: string, topics: string[]): Promise<string> {
     // Busca dados no Supabase baseado nos tópicos
     const now = new Date();
-    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    
+    // Ajuste para competência: USAR NOVA COLUNA DATE
+    // Se for resumo mensal, buscar intervalo do mes atual
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
     
     let contextData = "";
 
     // Queries comuns
     if (topics.includes('saldo') || topics.includes('resumo_mensal') || topics.includes('geral')) {
-        const { data: transitions } = await supabase
+         const { data: transitions } = await supabase
             .from('transactions')
-            .select('type, amount, category, created_at')
+            .select('type, amount, category, date')
             .eq('user_id', userId)
-            .gte('date', firstDayOfMonth); // Assumindo campo 'date' ou usar created_at
+            .gte('date', firstDay)
+            .lte('date', lastDay);
 
         if (transitions) {
             const despesas = transitions.filter(t => t.type === 'despesa').reduce((acc, curr) => acc + Number(curr.amount), 0);
             const receitas = transitions.filter(t => t.type === 'receita').reduce((acc, curr) => acc + Number(curr.amount), 0);
-            contextData += `Resumo Mês Atual: Receitas R$ ${receitas.toFixed(2)}, Despesas R$ ${despesas.toFixed(2)}. Saldo do mês: R$ ${(receitas - despesas).toFixed(2)}. `;
+            const refMonth = months[now.getMonth()];
+            contextData += `Resumo (${refMonth}): Receitas R$ ${receitas.toFixed(2)}, Despesas R$ ${despesas.toFixed(2)}. Saldo do mês: R$ ${(receitas - despesas).toFixed(2)}. `;
         }
     }
     
@@ -198,7 +220,8 @@ async function generateQueryResponse(userId: string, topics: string[]): Promise<
              .select('category, amount')
              .eq('user_id', userId)
              .eq('type', 'despesa')
-             .gte('date', firstDayOfMonth);
+             .gte('date', firstDay)
+             .lte('date', lastDay);
              
         if (byCategory) {
             const catTotals: Record<string, number> = {};
@@ -236,7 +259,6 @@ export default async function handler(request: VercelRequest, response: VercelRe
 
   try {
     // 0. Verificar Vinculação do Usuário
-    let userData = null;
     
     // Check rápido para /start com parametro
     if (message.text?.startsWith('/start ')) {
@@ -264,7 +286,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
         await sendTelegramMessage(chatId, "⚠️ Sua conta não está vinculada. Acesse o app Lumina > Minha Conta > Telegram para obter o link.");
         return response.status(200).send('Not Linked');
     }
-    userData = linkData;
+    const userData = linkData; // Explicit assignment to help TS inference flow or just use linkData direct
     const userId = userData.user_id;
     const budgetId = userData.default_budget_id;
 
@@ -384,7 +406,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
 }
 
 
-// Função auxiliar para Registrar e Validar Transação
+// Função auxiliar para Registrar e Validar Transação (COM SUPORTE A RECORRÊNCIA)
 async function registerTransaction(userId: string, budgetId: string, chatId: number, data: any) {
     if(!data.amount || !data.category) {
          await sendTelegramMessage(chatId, "⚠️ Dados incompletos. Tente novamente.");
@@ -399,38 +421,76 @@ async function registerTransaction(userId: string, budgetId: string, chatId: num
         .ilike('name', data.category)
         .single();
     
-    const finalData = {
+    // Definir data base
+    const baseDateStr = data.date || new Date().toISOString().split('T')[0];
+    let baseDate = new Date(baseDateStr);
+
+    // Preparar dados comuns com tipagem any para flexibilidade no loop de insercao
+    const transactionBase: any = {
         user_id: userId,
         budget_id: budgetId,
         type: data.type || 'despesa',
-        category: data.category, // Categoria original sugerida ou existente
+        // categoria será ajustada abaixo
         amount: data.amount,
-        description: data.description || 'Gasto via Telegram',
-        year: new Date().getFullYear().toString(),
-        month: months[new Date().getMonth()], 
+        // description será ajustada se for parcelado
         payment_status: 'paid' 
     };
 
     if (!catData) {
-        // Fluxo de criar categoria pendente
+        // Fluxo de criar categoria pendente (simplificado para não lidar com loop aqui ainda)
+        // Se for nova categoria, só salvamos a primeira parcela como pendente por segurança UX
+        transactionBase.category = data.category;
+        transactionBase.description = data.description || 'Gasto via Telegram';
+        transactionBase.date = baseDateStr;
+        transactionBase.year = baseDate.getFullYear().toString();
+        transactionBase.month = months[baseDate.getMonth()];
+
         await supabase.from('pending_telegram_actions').insert({
             chat_id: chatId,
             action_type: 'create_category',
-            payload: finalData
+            payload: transactionBase
         });
         await sendTelegramMessage(chatId, `A categoria *"${data.category}"* é nova. Deseja criá-la e salvar o gasto? (Sim/Não)`);
-    } else {
-        // Salvar direto
-        // Ajustar nome da categoria para o oficial do banco
-        finalData.category = catData.name;
+        return;
+    }
+    
+    // Ajustar nome da categoria
+    transactionBase.category = catData.name;
+
+    // Loop de Inserção (Recorrência/Parcelamento)
+    const installments = data.installments || 1;
+    const transactionsToInsert: any[] = []; // Explicitamente tipado como any[]
+
+    for (let i = 0; i < installments; i++) {
+        // Clonar objeto base
+        const trans = { ...transactionBase };
         
-        const { error } = await supabase.from('transactions').insert(finalData);
+        // Calcular Data da Parcela
+        const currentDate = new Date(baseDate);
+        currentDate.setMonth(baseDate.getMonth() + i); // Adiciona i meses
         
-        if (error) {
-            console.error("Erro insert:", error);
-            await sendTelegramMessage(chatId, "Erro ao salvar no banco de dados.");
+        trans.date = currentDate.toISOString().split('T')[0]; // YYYY-MM-DD
+        trans.year = currentDate.getFullYear().toString();
+        trans.month = months[currentDate.getMonth()];
+        
+        // Ajustar descrição se for parcelado
+        if (installments > 1) {
+            trans.description = `${data.description || 'Gasto Parcelado'} (${i + 1}/${installments})`;
         } else {
-            await sendTelegramMessage(chatId, `✅ *R$ ${data.amount}* em ${data.category}\n"${data.description}"\n\n(/desfazer para cancelar)`);
+            trans.description = data.description || 'Gasto via Telegram';
         }
+
+        transactionsToInsert.push(trans);
+    }
+        
+    const { error } = await supabase.from('transactions').insert(transactionsToInsert);
+    
+    if (error) {
+        console.error("Erro insert:", error);
+        await sendTelegramMessage(chatId, "Erro ao salvar no banco de dados.");
+    } else {
+        const msgRecorrencia = installments > 1 ? `\n🗓️ Repetido por ${installments} meses` : '';
+        const msgDate = data.date ? `\n📅 Data: ${data.date.split('-').reverse().join('/')}` : '';
+        await sendTelegramMessage(chatId, `✅ *R$ ${data.amount}* em ${data.category}\n"${data.description}"${msgRecorrencia}${msgDate}\n\n(/desfazer para cancelar o último)`);
     }
 }
