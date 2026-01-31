@@ -24,7 +24,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
  */
 async function analyzerAgent(query: string, context: any): Promise<any> {
   const model = genAI.getGenerativeModel({ 
-    model: 'gemini-2.5-flash',
+    model: 'gemini-2.5-flash-lite',
     generationConfig: { temperature: 0.3, maxOutputTokens: 500 }
   });
 
@@ -72,7 +72,7 @@ Responda em português brasileiro com emojis apropriados.
  */
 async function predictorAgent(query: string, context: any): Promise<any> {
   const model = genAI.getGenerativeModel({ 
-    model: 'gemini-2.5-flash',
+    model: 'gemini-2.5-flash-lite',
     generationConfig: { temperature: 0.4, maxOutputTokens: 400 }
   });
 
@@ -114,7 +114,7 @@ Responda em português brasileiro.
  */
 async function executorAgent(query: string, context: any): Promise<any> {
   const model = genAI.getGenerativeModel({ 
-    model: 'gemini-2.5-flash',
+    model: 'gemini-2.5-flash-lite',
     generationConfig: { temperature: 0.1 }
   });
 
@@ -190,7 +190,7 @@ Analise se a mensagem requer execução de ações no sistema.
  */
 async function insightAgent(context: any): Promise<any> {
   const model = genAI.getGenerativeModel({ 
-    model: 'gemini-2.5-flash',
+    model: 'gemini-2.5-flash-lite',
     generationConfig: { temperature: 0.7, maxOutputTokens: 400 }
   });
 
@@ -237,7 +237,7 @@ Responda em português brasileiro.
  */
 async function generalAgent(query: string, context: any, history: any[]): Promise<any> {
   const model = genAI.getGenerativeModel({ 
-    model: 'gemini-2.5-flash',
+    model: 'gemini-2.5-flash-lite',
     generationConfig: { temperature: 0.8, maxOutputTokens: 300 }
   });
 
@@ -289,7 +289,7 @@ Responda em português brasileiro.
 async function orchestrateAgents(message: string, context: any, history: any[]): Promise<any> {
   try {
     const model = genAI.getGenerativeModel({ 
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       generationConfig: { temperature: 0.2 }
     });
 
