@@ -11,7 +11,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Plus, Trash2, GripVertical, AlertCircle, Settings } from "lucide-react";
+import { Plus, Trash2, GripVertical, AlertCircle, Settings, Loader2 } from "lucide-react";
+import { BudgetSharingDialog, PendingInvites } from "@/components/BudgetSharingDialog";
 import {
   Dialog,
   DialogContent,
@@ -537,6 +538,10 @@ const Index = () => {
       
       <main className="p-4">
         <div className="max-w-7xl mx-auto space-y-8">
+
+          {/* Convites Pendentes */}
+          {userId && <PendingInvites userId={userId} />}
+
           {/* Seletor de orçamento */}
           <div className="bg-white p-4 rounded-lg shadow-md">
             <div className="flex items-end gap-2">
@@ -579,6 +584,13 @@ const Index = () => {
               >
                 <Settings className="h-4 w-4" />
               </Button>
+              {/* Botão de Compartilhar */}
+              {selectedBudgetId && userId && budgets.find(b => b.id === selectedBudgetId) && (
+                <BudgetSharingDialog 
+                  budget={budgets.find(b => b.id === selectedBudgetId)!} 
+                  userId={userId} 
+                />
+              )}
             </div>
           </div>
           
