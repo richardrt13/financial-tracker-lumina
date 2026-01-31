@@ -1,16 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Redis } from '@upstash/redis';
+import { generateText } from './ai-adapter-edge';
 
 // --- CONFIGURAÇÃO ---
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_KEY!
 );
-
-const genai = new GoogleGenerativeAI(process.env.VITE_GEMINI_API_KEY!);
-const model = genai.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
 
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL!,
@@ -315,8 +312,8 @@ Analise CRITICAMENTE se vale a pena enviar uma mensagem proativa agora. Consider
 ❌ "Suas despesas são R$ 1.234,56" (sem contexto ou ação)
 `;
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text().trim();
+    const response = await generateText(prompt, 'complex', 0.7, 600);
+    const responseText = response.content.trim();
     
     // Extrair JSON
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);

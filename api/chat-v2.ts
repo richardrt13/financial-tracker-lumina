@@ -1,10 +1,10 @@
 import { Redis } from '@upstash/redis';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { supabaseAdmin } from '../src/lib/supabase-admin';
+import { generateText } from './ai-adapter-edge';
 
 export const config = {
   runtime: 'edge',
-  maxDuration: 60, // Aumentar timeout
+  maxDuration: 60,
 };
 
 // --- CONFIGURAÇÃO DOS CLIENTES ---
@@ -12,8 +12,6 @@ const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL!,
   token: process.env.UPSTASH_REDIS_REST_TOKEN!,
 });
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
 // =====================================================
 // SISTEMA DE AGENTES ESPECIALIZADOS
@@ -23,11 +21,6 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
  * Agente Analisador - Análises quantitativas de dados financeiros
  */
 async function analyzerAgent(query: string, context: any): Promise<any> {
-  const model = genAI.getGenerativeModel({ 
-    model: 'gemini-2.5-flash-lite',
-    generationConfig: { temperature: 0.3, maxOutputTokens: 500 }
-  });
-
   // Detectar se é pergunta simples ou análise detalhada
   const isSimpleQuery = /^(quanto|qual|quais|quantos)\s+(gastei|ganhei|tenho|foi)/i.test(query.trim());
   
@@ -60,9 +53,10 @@ ${isSimpleQuery
 Responda em português brasileiro com emojis apropriados.
   `;
 
-  const result = await model.generateContent(prompt);
+  const response = await generateText(prompt, 'simple', 0.3, 500);
+
   return {
-    content: result.response.text(),
+    content: response.content,
     confidence: 0.85,
     toolsUsed: ['data_analysis', isSimpleQuery ? 'quick_answer' : 'trend_detection']
   };
@@ -72,11 +66,6 @@ Responda em português brasileiro com emojis apropriados.
  * Agente Preditor - Projeções e previsões financeiras
  */
 async function predictorAgent(query: string, context: any): Promise<any> {
-  const model = genAI.getGenerativeModel({ 
-    model: 'gemini-2.5-flash-lite',
-    generationConfig: { temperature: 0.4, maxOutputTokens: 400 }
-  });
-
   // Calcular histórico mensal
   const monthlyData = calculateMonthlyHistory(context.recentTransactions);
 
@@ -102,9 +91,9 @@ Você é Spendly, especialista em projeções financeiras. Seja DIRETO e PRÁTIC
 Responda em português brasileiro.
   `;
 
-  const result = await model.generateContent(prompt);
+  const response = await generateText(prompt, 'simple', 0.4, 400);
   return {
-    content: result.response.text(),
+    content: response.content,
     confidence: 0.75,
     toolsUsed: ['forecasting']
   };
@@ -114,11 +103,6 @@ Responda em português brasileiro.
  * Agente Executor - Detecção de intenções e ações
  */
 async function executorAgent(query: string, context: any): Promise<any> {
-  const model = genAI.getGenerativeModel({ 
-    model: 'gemini-2.5-flash-lite',
-    generationConfig: { temperature: 0.1 }
-  });
-
   const prompt = `
 Analise se a mensagem requer execução de ações no sistema.
 
@@ -155,8 +139,8 @@ Analise se a mensagem requer execução de ações no sistema.
 - "oi, tudo bem?" -> none
   `;
 
-  const result = await model.generateContent(prompt);
-  const intentJson = result.response.text().replace(/```json|```/g, '').trim();
+  const response = await generateText(prompt, 'simple', 0.1, 500);
+  const intentJson = response.content.replace(/```json|```/g, '').trim();
   const intent = JSON.parse(intentJson);
 
   if (!intent.isExecutable || intent.action === 'none') {
@@ -190,11 +174,6 @@ Analise se a mensagem requer execução de ações no sistema.
  * Agente de Insights - Descoberta proativa de padrões
  */
 async function insightAgent(context: any): Promise<any> {
-  const model = genAI.getGenerativeModel({ 
-    model: 'gemini-2.5-flash-lite',
-    generationConfig: { temperature: 0.7, maxOutputTokens: 400 }
-  });
-
   const prompt = `
 Você é Spendly, consultor financeiro. Descubra insights PRÁTICOS e ACIONÁVEIS.
 
@@ -226,9 +205,9 @@ ${context.recentTransactions.slice(0, 20).map((t: any) =>
 Responda em português brasileiro.
   `;
 
-  const result = await model.generateContent(prompt);
+  const response = await generateText(prompt, 'simple', 0.7, 400);
   return {
-    content: result.response.text(),
+    content: response.content,
     confidence: 0.8,
     toolsUsed: ['pattern_recognition', 'opportunity_finding']
   };
@@ -238,11 +217,6 @@ Responda em português brasileiro.
  * Agente de Conversação Geral
  */
 async function generalAgent(query: string, context: any, history: any[]): Promise<any> {
-  const model = genAI.getGenerativeModel({ 
-    model: 'gemini-2.5-flash-lite',
-    generationConfig: { temperature: 0.8, maxOutputTokens: 300 }
-  });
-
   const healthEmoji = {
     'excellent': '🌟',
     'good': '✅',
@@ -276,9 +250,9 @@ ${history.slice(-2).map((m: any) => `${m.role === 'user' ? 'User' : 'You'}: ${m.
 Responda em português brasileiro.
   `;
 
-  const result = await model.generateContent(prompt);
+  const response = await generateText(prompt, 'simple', 0.8, 300);
   return {
-    content: result.response.text(),
+    content: response.content,
     confidence: 0.9,
     toolsUsed: ['general_conversation']
   };
@@ -290,11 +264,6 @@ Responda em português brasileiro.
 
 async function orchestrateAgents(message: string, context: any, history: any[]): Promise<any> {
   try {
-    const model = genAI.getGenerativeModel({ 
-      model: 'gemini-2.5-flash-lite',
-      generationConfig: { temperature: 0.2 }
-    });
-
     const recentHistory = history.slice(-3).map((m: any) => 
       `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content.substring(0, 100)}`
     ).join('\n');
@@ -329,8 +298,8 @@ ${recentHistory}
 }
     `;
 
-    const result = await model.generateContent(prompt);
-    let responseText = result.response.text();
+    const response = await generateText(prompt, 'simple', 0.2, 300);
+    let responseText = response.content;
     
     // Limpar possíveis problemas de formatação
     responseText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
