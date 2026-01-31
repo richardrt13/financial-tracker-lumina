@@ -15,19 +15,16 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import Markdown from 'react-markdown'; 
 
 
-type Transaction = {
+interface Transaction {
   id: number;
-  year: string;
-  month: string;
-  type: string;
-  category: string;
+  type: 'receita' | 'despesa' | 'investimento';
   amount: number;
-  description?: string;
+  category: string;
+  description: string | null;
+  status: string; // Adicionado
+  is_completed?: boolean; // Deprecated
   created_at: string;
-  user_id: string;
-  is_completed: boolean;
-  completed_at?: string;
-  due_day?: number;
+  date?: string; // Adicionado caso já queira usar no Chat
 };
 
 type Message = {

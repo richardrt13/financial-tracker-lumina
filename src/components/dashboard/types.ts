@@ -2,17 +2,20 @@
 
 export type Transaction = {
   id: number;
-  year: string;
-  month: string;
-  type: string;
-  category: string;
+  type: 'receita' | 'despesa' | 'investimento';
   amount: number;
-  description?: string;
+  category: string;
+  description: string | null;
+  date: string; // Nova coluna
+  month: string;
+  year: string;
+  // is_completed: boolean; --> DEPRECATED
+  status: 'pending' | 'verified' | 'cancelled' | 'scheduled' | 'overdue'; // Nova Fonte da Verdade
+  is_completed?: boolean; // Mantido para compatibilidade retroativa temporária em alguns componentes UI
+  completed_at: string | null;
   created_at: string;
+  due_day: number | null;
   user_id: string;
-  is_completed: boolean;
-  completed_at?: string;
-  due_day?: number;
   budget_id: string;
   linked_income_id?: string | null;
   linked_income_details?: {
