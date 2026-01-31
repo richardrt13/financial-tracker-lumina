@@ -1,7 +1,7 @@
 import { TransactionForm } from "@/components/TransactionForm";
 import { Dashboard } from "@/components/dashboard/index";
 import Header from "@/components/Header";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { 
   Select,
@@ -94,28 +94,84 @@ const Index = () => {
     };
   }, []);
 
-  // Buscar orçamentos do usuário
-  const fetchBudgets = async (uid: string) => {
-    const { data, error } = await supabase
+  // Listener em tempo real para mudanças em compartilhamentos
+  useEffect(() => {
+    if (!userId) return;
+
+    // Criar canal para ouvir mudanças em budget_shares
+    const channel = supabase
+      .channel('budget-shares-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'budget_shares',
+          filter: `shared_with_id=eq.${userId}`
+        },
+        (payload) => {
+          console.log('Compartilhamento atualizado:', payload);
+          
+          // Recarregar orçamentos quando houver mudança
+          if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+            fetchBudgets(userId);
+          }
+        }
+      )
+      .subscribe();
+
+    // Cleanup: desinscrever quando o componente for desmontado
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId]);
+
+  // Buscar orçamentos do usuário (próprios + compartilhados aceitos)
+  const fetchBudgets = useCallback(async (uid: string) => {
+    // 1. Buscar orçamentos próprios
+    const { data: myBudgets, error: myError } = await supabase
       .from('budgets')
       .select('*')
       .eq('user_id', uid)
       .order('order_position', { ascending: true });
       
-    if (error) {
-      console.error('Erro ao buscar orçamentos:', error);
+    if (myError) {
+      console.error('Erro ao buscar orçamentos próprios:', myError);
       return;
     }
+
+    // 2. Buscar orçamentos compartilhados aceitos
+    const { data: sharedBudgets, error: sharedError } = await supabase
+      .from('shared_budgets_view')
+      .select('*')
+      .eq('shared_with_id', uid)
+      .eq('status', 'accepted');
+
+    if (sharedError) {
+      console.error('Erro ao buscar orçamentos compartilhados:', sharedError);
+    }
+
+    // 3. Combinar orçamentos próprios e compartilhados
+    const allBudgets: Budget[] = [
+      ...(myBudgets || []),
+      ...(sharedBudgets || []).map(sb => ({
+        id: sb.budget_id,
+        name: `${sb.budget_name} (${sb.owner_name || sb.owner_email})`,
+        user_id: sb.owner_id, // Mantém o ID do dono original
+        created_at: sb.created_at,
+        order_position: 999 + (sharedBudgets?.indexOf(sb) || 0), // Coloca compartilhados no final
+      }))
+    ];
     
-    if (data && data.length > 0) {
-      setBudgets(data);
+    if (allBudgets.length > 0) {
+      setBudgets(allBudgets);
       // Selecionar o primeiro orçamento por padrão
-      setSelectedBudgetId(data[0].id);
+      setSelectedBudgetId(allBudgets[0].id);
     } else {
       // Se não houver orçamentos, criar um padrão
       createDefaultBudget(uid);
     }
-  };
+  }, []);
 
   // Criar orçamento padrão para novos usuários
   const createDefaultBudget = async (uid: string) => {
