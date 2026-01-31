@@ -21,14 +21,7 @@ export default defineConfig(({ mode }) => ({
   build: {
     // Otimizações de build
     target: 'es2020',
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        drop_console: mode === 'production', // Remove console.logs em produção
-        drop_debugger: true,
-        pure_funcs: mode === 'production' ? ['console.log', 'console.debug'] : [],
-      },
-    },
+    minify: 'esbuild',
     rollupOptions: {
       output: {
         // Separar vendors para melhor cache
