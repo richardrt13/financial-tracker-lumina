@@ -45,25 +45,70 @@ export const useBudgetSharing = (userId: string | null) => {
   // Buscar usuário por email
   const searchUserByEmail = async (email: string): Promise<UserProfile | null> => {
     try {
-      const { data, error } = await supabase
+      const emailLower = email.toLowerCase().trim();
+      
+      // Primeiro tenta buscar na tabela profiles
+      const { data: profileData } = await supabase
         .from('profiles')
         .select('id, email, full_name, avatar_url')
-        .eq('email', email.toLowerCase().trim())
-        .single();
+        .eq('email', emailLower)
+        .maybeSingle();
 
-      if (error) {
-        if (error.code === 'PGRST116') {
-          toast({
-            title: 'Usuário não encontrado',
-            description: 'Nenhum usuário encontrado com este email.',
-            variant: 'destructive',
-          });
-          return null;
-        }
-        throw error;
+      // Se encontrou no profiles, retorna
+      if (profileData) {
+        return profileData;
       }
 
-      return data;
+      // Se não encontrou, busca diretamente em auth.users via RPC
+      // Isso funciona porque auth.users sempre tem o usuário quando ele se cadastra
+      const { data: userData, error: userError } = await supabase.rpc(
+        'get_user_by_email',
+        { user_email: emailLower }
+      );
+
+      if (userError) {
+        console.error('Error in RPC:', userError);
+        
+        // Se a função RPC não existe, tenta uma abordagem alternativa
+        // Buscar todos os usuários que compartilharam algo (eles existem em auth.users)
+        const { data: { users }, error: listError } = await supabase.auth.admin.listUsers();
+        
+        if (!listError && users) {
+          const foundUser = users.find(u => u.email?.toLowerCase() === emailLower);
+          
+          if (foundUser) {
+            return {
+              id: foundUser.id,
+              email: foundUser.email || emailLower,
+              full_name: foundUser.user_metadata?.full_name || null,
+              avatar_url: foundUser.user_metadata?.avatar_url || null,
+            };
+          }
+        }
+        
+        toast({
+          title: 'Usuário não encontrado',
+          description: 'Nenhum usuário encontrado com este email.',
+          variant: 'destructive',
+        });
+        return null;
+      }
+
+      if (!userData || userData.length === 0) {
+        toast({
+          title: 'Usuário não encontrado',
+          description: 'Nenhum usuário encontrado com este email.',
+          variant: 'destructive',
+        });
+        return null;
+      }
+
+      return {
+        id: userData[0].id,
+        email: userData[0].email,
+        full_name: userData[0].raw_user_meta_data?.full_name || null,
+        avatar_url: userData[0].raw_user_meta_data?.avatar_url || null,
+      };
     } catch (error) {
       console.error('Error searching user:', error);
       toast({
