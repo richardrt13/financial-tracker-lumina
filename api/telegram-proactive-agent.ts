@@ -231,7 +231,7 @@ async function generateProactiveInsight(context: FinancialContext): Promise<Proa
 
     // Montar contexto para a IA
     const prompt = `
-Você é Spendly, um assistente financeiro proativo via Telegram. Analise a situação financeira do usuário e decida se deve enviar uma mensagem proativa.
+Você é Spendly, um assistente financeiro profissional via Telegram. Analise a situação financeira do usuário e decida se deve enviar uma mensagem proativa.
 
 **CONTEXTO FINANCEIRO:**
 
@@ -295,21 +295,21 @@ Analise CRITICAMENTE se vale a pena enviar uma mensagem proativa agora. Consider
   "shouldSend": true/false,
   "priority": "high" | "medium" | "low",
   "category": "alert" | "tip" | "celebration" | "reminder" | "analysis",
-  "message": "Mensagem em português, 2-4 linhas, tom amigável, com emojis apropriados",
+  "message": "Mensagem em português, 2-3 linhas, tom profissional e objetivo. Use NO MÁXIMO 2 emojis.",
   "reasoning": "Por que decidiu enviar (ou não enviar)"
 }
 
 **EXEMPLOS DE BOAS MENSAGENS:**
 
-✅ "🚨 Opa! Suas despesas já ultrapassaram suas receitas este mês. Você está R$ 500 no vermelho. Que tal revisar os gastos em Alimentação? Posso ajudar!"
+✅ "⚠️ Suas despesas ultrapassaram suas receitas este mês em R$ 500. Recomendo revisar os gastos em Alimentação, que representam 35% do total."
 
-✅ "💡 Notei que você gasta R$ 300/mês em Transporte. Algumas viagens poderiam ser substituídas por carona ou bike? Economia potencial: R$ 100/mês! 🚴"
+✅ "Identifiquei que você gasta R$ 300/mês em Transporte. Substituindo 30% das viagens por alternativas, você pode economizar R$ 100/mês."
 
-✅ "🎉 Parabéns! Você está economizando 25% da sua receita este mês. Continue assim e vai juntar R$ 3.000 até o final do ano! 💰"
+✅ "Parabéns! Sua taxa de economia está em 25% este mês. Mantendo esse ritmo, você acumulará R$ 3.000 até dezembro."
 
-❌ "Você tem 15 transações este mês" (informação trivial)
+❌ "Você tem 15 transações este mês 😊💰📊" (informação trivial + excesso de emojis)
 
-❌ "Suas despesas são R$ 1.234,56" (sem contexto ou ação)
+❌ "Suas despesas são R$ 1.234,56 🤑" (sem contexto ou ação)
 `;
 
     const response = await generateText(prompt, 'complex', 0.7, 600);
@@ -364,10 +364,17 @@ async function markMessageSent(userId: string) {
 // --- HANDLER PRINCIPAL ---
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Autenticação (cron secret)
+  // Autenticação (cron secret OU requisição do Vercel Cron)
   const authHeader = req.headers.authorization;
-  if (authHeader !== `Bearer ${CRON_SECRET}`) {
-    return res.status(401).json({ error: 'Unauthorized' });
+  const isVercelCron = req.headers['user-agent']?.includes('vercel-cron') || 
+                       req.headers['x-vercel-cron'] === '1';
+  
+  // Permitir se vier do Vercel Cron OU se tiver o Bearer token correto
+  if (!isVercelCron && authHeader !== `Bearer ${CRON_SECRET}`) {
+    return res.status(401).json({ 
+      error: 'Unauthorized',
+      hint: 'Use Authorization: Bearer <CRON_SECRET> header or run via Vercel Cron'
+    });
   }
 
   try {

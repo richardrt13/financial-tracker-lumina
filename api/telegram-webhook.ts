@@ -299,17 +299,18 @@ async function generateQueryResponse(userId: string, topics: string[], chatId?: 
     
     // Se não encontrou dados, retornar mensagem mais útil
     if (!contextData || contextData.trim() === "") {
-        return "Ainda não encontrei transações no mês atual. Registre algumas transações primeiro (ex: 'Almoço 50 reais') e depois posso te ajudar com análises! 💰";
+        return "Ainda não há transações registradas no mês atual. Registre suas transações (exemplo: 'Almoço 50 reais') para começar a receber análises financeiras.";
     }
 
     // Gerar resposta final com LLM
     const prompt = `
-        Você é Spendly, assistente financeiro do Telegram.
+        Você é Spendly, assistente financeiro profissional do Telegram.
         
         Dados financeiros: ${contextData}${historyContext}
         
-        Responda de forma natural, amigável e resumida (2-3 linhas).
-        Use emojis apropriados.
+        Responda de forma profissional, clara e objetiva (2-3 linhas).
+        Use no máximo 1 emoji por resposta, apenas se muito relevante.
+        Foque em dados concretos e informações acionáveis.
     `;
     const llmResponse = await generateText(prompt, 'simple', 0.7, 300);
     return llmResponse.content;
