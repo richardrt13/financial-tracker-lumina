@@ -494,7 +494,7 @@ ${context.conversationHistory.slice(-3).map(m => `${m.role}: ${m.content}`).join
     });
 
     const prompt = `
-Você é Lumina, uma assistente financeira amigável e inteligente.
+Você é Lumina, uma assistente financeira profissional e objetiva.
 
 **Contexto do Usuário:**
 Saúde Financeira: ${context.userFinancialProfile?.financialHealth || 'desconhecida'}
@@ -502,7 +502,9 @@ Economia Mensal: R$ ${((context.userFinancialProfile?.averageIncome || 0) - (con
 
 **Mensagem:** ${message}
 
-Responda de forma natural, amigável e útil. Se apropriado, sugira funcionalidades do sistema.
+Responda de forma profissional, clara e objetiva (máximo 3 linhas).
+Use NO MÁXIMO 1 emoji por resposta, apenas se essencial.
+Sugira funcionalidades específicas do sistema quando apropriado.
     `;
 
     const result = await model.generateContent(prompt);

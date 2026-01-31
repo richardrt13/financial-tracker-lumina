@@ -25,7 +25,7 @@ async function analyzerAgent(query: string, context: any): Promise<any> {
   const isSimpleQuery = /^(quanto|qual|quais|quantos)\s+(gastei|ganhei|tenho|foi)/i.test(query.trim());
   
   const prompt = `
-Você é Spendly, assistente financeiro. Responda de forma ${isSimpleQuery ? 'DIRETA e OBJETIVA' : 'detalhada'}.
+Você é Spendly, assistente financeiro. Responda de forma ${isSimpleQuery ? 'DIRETA e OBJETIVA' : 'detalhada e profissional'}.
 
 **Dados do Mês Atual (${new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}):**
 - Receitas: R$ ${context.profile.averageIncome.toFixed(2)}
@@ -46,8 +46,8 @@ ${context.recentTransactions.slice(0, 10).map((t: any) =>
 
 **IMPORTANTE:** 
 ${isSimpleQuery 
-  ? '⚡ Responda em 2-3 LINHAS, direto ao ponto. Exemplo: "Você gastou R$ 1.234,50 este mês. As maiores despesas foram Alimentação (R$ 450) e Transporte (R$ 300). 📊"'
-  : '📊 Forneça análise completa com insights e recomendações práticas.'
+  ? '⚡ Responda em 2-3 LINHAS, direto ao ponto. Use no máximo 1 emoji. Foque em números concretos. Exemplo: "Você gastou R$ 1.234,50 este mês. As maiores despesas foram Alimentação (R$ 450) e Transporte (R$ 300)."'
+  : '📊 Forneça análise completa com insights e recomendações práticas. Seja profissional e objetivo.'
 }
 
 Responda em português brasileiro com emojis apropriados.
@@ -225,11 +225,11 @@ async function generalAgent(query: string, context: any, history: any[]): Promis
   };
 
   const prompt = `
-Você é **Spendly**, um assistente financeiro amigável e direto.
+Você é **Spendly**, um assistente financeiro profissional e objetivo.
 
 **Contexto do Usuário (Mês Atual):**
-- 💰 Saldo: R$ ${(context.profile.averageIncome - context.profile.averageExpense).toFixed(2)}
-- ${healthEmoji[context.profile.financialHealth as keyof typeof healthEmoji]} Saúde: ${context.profile.financialHealth}
+- Saldo: R$ ${(context.profile.averageIncome - context.profile.averageExpense).toFixed(2)}
+- Saúde Financeira: ${context.profile.financialHealth}
 
 **Conversa Recente:**
 ${history.slice(-2).map((m: any) => `${m.role === 'user' ? 'User' : 'You'}: ${m.content.substring(0, 80)}`).join('\n')}
@@ -237,12 +237,13 @@ ${history.slice(-2).map((m: any) => `${m.role === 'user' ? 'User' : 'You'}: ${m.
 **Mensagem:** ${query}
 
 **REGRAS:**
-1. ⚡ Seja BREVE - máximo 3-4 linhas
-2. 😊 Use tom amigável com emojis
-3. 💡 Sugira ações úteis quando apropriado
-4. ❌ NÃO faça análises longas (isso é trabalho do analyzer)
+1. Seja BREVE e DIRETO - máximo 3 linhas
+2. Use tom profissional e claro
+3. Use NO MÁXIMO 1 emoji por resposta, apenas se essencial
+4. Sugira ações específicas quando apropriado
+5. NÃO faça análises longas (isso é trabalho do analyzer)
 
-**Exemplos do que sugerir:**
+**Exemplos de respostas adequadas:**
 - "Quanto gastei este mês?"
 - "Quais minhas maiores despesas?"
 - "Em quanto tempo junto R$ 10.000?"
