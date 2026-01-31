@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenerativeAI, InlineDataPart } from '@google/generative-ai';
+import { Redis } from '@upstash/redis';
 
 // --- CONFIGURAÇÃO E CONSTANTES ---
 const months = [
@@ -51,6 +52,42 @@ const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const genai = new GoogleGenerativeAI(geminiApiKey);
 const modelFlash = genai.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
+
+// ✅ Redis para histórico de conversas
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
+
+// --- FUNÇÕES REDIS ---
+async function getTelegramHistory(chatId: number): Promise<any[]> {
+  try {
+    const key = `telegram_history:${chatId}`;
+    const rawHistory = await redis.lrange(key, 0, 9); // Últimas 10 mensagens
+    return rawHistory.reverse().map((item: any) => {
+      try {
+        return JSON.parse(item);
+      } catch {
+        return { role: 'assistant', content: String(item) };
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao buscar histórico do Telegram:', error);
+    return [];
+  }
+}
+
+async function saveTelegramMessage(chatId: number, role: 'user' | 'assistant', content: string) {
+  try {
+    const key = `telegram_history:${chatId}`;
+    const message = JSON.stringify({ role, content, timestamp: Date.now() });
+    await redis.lpush(key, message);
+    await redis.ltrim(key, 0, 19); // Manter últimas 20 mensagens
+    await redis.expire(key, 86400); // Expira em 24h
+  } catch (error) {
+    console.error('Erro ao salvar mensagem do Telegram:', error);
+  }
+}
 
 // --- FUNÇÕES AUXILIARES ---
 
@@ -186,7 +223,7 @@ async function understandIntention(text: string, userId: string): Promise<{
     }
 }
 
-async function generateQueryResponse(userId: string, topics: string[]): Promise<string> {
+async function generateQueryResponse(userId: string, topics: string[], chatId?: number): Promise<string> {
     // Busca dados no Supabase baseado nos tópicos
     const now = new Date();
     
@@ -230,11 +267,26 @@ async function generateQueryResponse(userId: string, topics: string[]): Promise<
         }
     }
 
+    // ✅ Buscar histórico de conversa se chatId fornecido
+    let historyContext = "";
+    if (chatId) {
+        const history = await getTelegramHistory(chatId);
+        if (history.length > 0) {
+            historyContext = `\n\nHistórico recente:\n${history.slice(-3).map(h => 
+                `${h.role === 'user' ? 'Usuário' : 'Você'}: ${h.content.substring(0, 100)}`
+            ).join('\n')}`;
+        }
+    }
+
     // Gerar resposta final com LLM
     const prompt = `
-        Com base nestes dados: ${contextData || "Sem dados recentes."}
-        Responda a pergunta do usuário de forma natural, amigável e resumida.
+        Você é Spendly, assistente financeiro do Telegram.
+        
+        Dados financeiros: ${contextData || "Sem dados recentes."}${historyContext}
+        
+        Responda de forma natural, amigável e resumida (2-3 linhas).
         Se não tiver dados, diga que não encontrou transações recentes.
+        Use emojis apropriados.
     `;
     const result = await modelFlash.generateContent(prompt);
     return result.response.text();
@@ -319,8 +371,10 @@ export default async function handler(request: VercelRequest, response: VercelRe
 
     // --- RESUMO ---
     if (message.text?.trim().toLowerCase() === '/resumo') {
-        const resposta = await generateQueryResponse(userId, ['resumo_mensal']);
+        await saveTelegramMessage(chatId, 'user', '/resumo'); // ✅ Salvar no histórico
+        const resposta = await generateQueryResponse(userId, ['resumo_mensal'], chatId);
         await sendTelegramMessage(chatId, `📊 *Resumo Rápido:*\n${resposta}`);
+        await saveTelegramMessage(chatId, 'assistant', resposta); // ✅ Salvar resposta
         return response.status(200).send('Summary');
     }
 
@@ -383,16 +437,22 @@ export default async function handler(request: VercelRequest, response: VercelRe
 
     // Se é texto (original ou transcrito), analisa a intenção
     if (processedText) {
+        // ✅ Salvar mensagem do usuário no histórico
+        await saveTelegramMessage(chatId, 'user', processedText);
+        
         const intention = await understandIntention(processedText, userId);
         
         if (intention.isTransaction && intention.transactionData) {
             await registerTransaction(userId, budgetId, chatId, intention.transactionData);
         } else if (intention.isQuery && intention.queryTopics) {
              await sendTelegramMessage(chatId, "🔍 Consultando dados...");
-             const answer = await generateQueryResponse(userId, intention.queryTopics);
+             const answer = await generateQueryResponse(userId, intention.queryTopics, chatId); // ✅ Passar chatId
              await sendTelegramMessage(chatId, answer);
+             await saveTelegramMessage(chatId, 'assistant', answer); // ✅ Salvar resposta
         } else {
-            await sendTelegramMessage(chatId, "🤔 Não entendi se isso é um gasto ou uma pergunta. Tente ser mais claro. Ex: 'Gastei 15 na padaria' ou 'Qual meu saldo?'");
+            const fallbackMsg = "🤔 Não entendi se isso é um gasto ou uma pergunta. Tente ser mais claro. Ex: 'Gastei 15 na padaria' ou 'Qual meu saldo?'";
+            await sendTelegramMessage(chatId, fallbackMsg);
+            await saveTelegramMessage(chatId, 'assistant', fallbackMsg); // ✅ Salvar resposta
         }
     }
 
