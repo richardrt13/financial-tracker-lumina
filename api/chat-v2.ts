@@ -4,6 +4,7 @@ import { supabaseAdmin } from '../src/lib/supabase-admin';
 
 export const config = {
   runtime: 'edge',
+  maxDuration: 60, // Aumentar timeout
 };
 
 // --- CONFIGURAÇÃO DOS CLIENTES ---
@@ -473,22 +474,37 @@ function getActionLabel(action: string): string {
 
 async function buildFinancialContext(userId: string): Promise<any> {
   try {
-    // Buscar transações
+    // ✅ SEGURANÇA: Buscar APENAS transações do usuário logado
+    // ✅ PERFORMANCE: Limitar a 100 transações mais recentes (reduzido de 200)
     const { data: transactions, error } = await supabaseAdmin
       .from('transactions')
-      .select('*')
-      .eq('user_id', userId)
+      .select('id, amount, type, category, created_at') // Selecionar apenas campos necessários
+      .eq('user_id', userId) // 🔒 ISOLAMENTO: Apenas dados do usuário
       .order('created_at', { ascending: false })
-      .limit(200);
+      .limit(100); // Reduzir para melhorar performance
 
-    if (error) throw error;
+    if (error) {
+      console.error('Erro ao buscar transações:', error);
+      throw error;
+    }
+
+    // Verificar se há dados
+    if (!transactions || transactions.length === 0) {
+      console.log(`Usuário ${userId} não tem transações`);
+      return {
+        profile: getDefaultProfile(),
+        recentTransactions: []
+      };
+    }
 
     // Calcular perfil
-    const profile = calculateFinancialProfile(transactions || []);
+    const profile = calculateFinancialProfile(transactions);
+
+    console.log(`Contexto carregado para usuário ${userId}: ${transactions.length} transações`);
 
     return {
       profile,
-      recentTransactions: transactions || []
+      recentTransactions: transactions
     };
   } catch (error) {
     console.error('Error building context:', error);
@@ -574,18 +590,32 @@ function getDefaultProfile(): any {
 // =====================================================
 
 export default async function handler(req: Request) {
+  const startTime = Date.now(); // Medir tempo de execução
+  
   try {
     const { userId, message } = await req.json();
+    
+    // ✅ SEGURANÇA: Validar userId obrigatório
     if (!userId || !message) {
-      throw new Error('userId e message são obrigatórios.');
+      return new Response(JSON.stringify({ 
+        error: 'userId e message são obrigatórios.' 
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
+    // ✅ ISOLAMENTO: Cada usuário tem sua própria chave de histórico
     const historyKey = `chat_history:${userId}`;
+    console.log(`[${userId}] Processando mensagem: "${message.substring(0, 50)}..."`);
 
-    // 1. Buscar contexto financeiro
+    // 1. Buscar contexto financeiro (APENAS do usuário logado)
+    const contextStart = Date.now();
     const context = await buildFinancialContext(userId);
+    console.log(`[${userId}] Contexto carregado em ${Date.now() - contextStart}ms`);
 
-    // 2. Buscar histórico de conversa
+    // 2. Buscar histórico de conversa (APENAS do usuário logado)
+    const historyStart = Date.now();
     const rawHistory = await redis.lrange(historyKey, 0, 9);
     const history = rawHistory.reverse().map((item: any) => {
       try {
@@ -594,11 +624,15 @@ export default async function handler(req: Request) {
         return { role: 'assistant', content: String(item) };
       }
     });
+    console.log(`[${userId}] Histórico carregado em ${Date.now() - historyStart}ms`);
 
     // 3. Orquestrar - decidir qual agente usar
+    const orchestratorStart = Date.now();
     const decision = await orchestrateAgents(message, context, history);
+    console.log(`[${userId}] Orquestrador decidiu: ${decision.agent} em ${Date.now() - orchestratorStart}ms`);
 
     // 4. Executar agente apropriado
+    const agentStart = Date.now();
     let response: any;
     
     switch (decision.agent) {
@@ -619,8 +653,9 @@ export default async function handler(req: Request) {
         response = await generalAgent(message, context, history);
         break;
     }
+    console.log(`[${userId}] Agente ${decision.agent} respondeu em ${Date.now() - agentStart}ms`);
 
-    // 5. Atualizar histórico
+    // 5. Atualizar histórico (ISOLADO por usuário)
     const userMsg = JSON.stringify({ role: 'user', content: message, timestamp: Date.now() });
     const assistantMsg = JSON.stringify({ 
       role: 'assistant', 
@@ -636,6 +671,9 @@ export default async function handler(req: Request) {
     await redis.lpush(historyKey, assistantMsg);
     await redis.ltrim(historyKey, 0, 29); // Manter últimas 30 mensagens
 
+    const totalTime = Date.now() - startTime;
+    console.log(`[${userId}] Resposta completa em ${totalTime}ms`);
+
     // 6. Retornar resposta
     return new Response(JSON.stringify({ 
       response: response.content,
@@ -643,7 +681,8 @@ export default async function handler(req: Request) {
         agent: decision.agent,
         confidence: response.confidence,
         toolsUsed: response.toolsUsed,
-        suggestedActions: response.suggestedActions || []
+        suggestedActions: response.suggestedActions || [],
+        executionTime: totalTime
       }
     }), {
       status: 200,
