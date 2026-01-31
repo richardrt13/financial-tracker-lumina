@@ -14,6 +14,72 @@ const redis = new Redis({
 });
 
 // =====================================================
+// FUNÇÕES AUXILIARES
+// =====================================================
+
+// Função para detectar período temporal na pergunta
+function detectTimePeriod(query: string): { startDate: string; endDate: string; period: string } {
+  const now = new Date();
+  const queryLower = query.toLowerCase();
+  
+  // Últimos X meses
+  const lastMonthsMatch = queryLower.match(/(?:últimos?|ultimos?|nos)\s+(\d+)\s+(?:meses|mes)/i);
+  if (lastMonthsMatch) {
+    const months = parseInt(lastMonthsMatch[1]);
+    const startDate = new Date(now.getFullYear(), now.getMonth() - months + 1, 1).toISOString().split('T')[0];
+    const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+    return { startDate, endDate, period: `últimos ${months} meses` };
+  }
+  
+  // Últimos X anos
+  const lastYearsMatch = queryLower.match(/(?:últimos?|ultimos?|nos)\s+(\d+)\s+(?:anos?|ano)/i);
+  if (lastYearsMatch) {
+    const years = parseInt(lastYearsMatch[1]);
+    const startDate = new Date(now.getFullYear() - years, 0, 1).toISOString().split('T')[0];
+    const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+    return { startDate, endDate, period: `últimos ${years} anos` };
+  }
+  
+  // Este ano
+  if (queryLower.match(/(?:este|neste|no|do)\s+ano/i)) {
+    const startDate = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
+    const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+    return { startDate, endDate, period: 'este ano' };
+  }
+  
+  // Ano específico (2025, 2024, etc)
+  const yearMatch = queryLower.match(/\b(202[0-9])\b/);
+  if (yearMatch) {
+    const year = parseInt(yearMatch[1]);
+    const startDate = new Date(year, 0, 1).toISOString().split('T')[0];
+    const endDate = new Date(year, 11, 31).toISOString().split('T')[0];
+    return { startDate, endDate, period: `ano ${year}` };
+  }
+  
+  // Mês específico (janeiro, fevereiro, etc)
+  const monthNames = ['janeiro', 'fevereiro', 'março', 'marco', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  for (let i = 0; i < monthNames.length; i++) {
+    if (queryLower.includes(monthNames[i])) {
+      const startDate = new Date(now.getFullYear(), i, 1).toISOString().split('T')[0];
+      const endDate = new Date(now.getFullYear(), i + 1, 0).toISOString().split('T')[0];
+      return { startDate, endDate, period: monthNames[i] };
+    }
+  }
+  
+  // Todo o histórico / sempre / tudo
+  if (queryLower.match(/(?:todo|tudo|sempre|histórico|historico|total|desde o início|desde o inicio)/i)) {
+    const startDate = new Date(now.getFullYear() - 5, 0, 1).toISOString().split('T')[0]; // 5 anos atrás
+    const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+    return { startDate, endDate, period: 'histórico completo' };
+  }
+  
+  // Default: mês atual
+  const startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+  const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+  return { startDate, endDate, period: 'mês atual' };
+}
+
+// =====================================================
 // SISTEMA DE AGENTES ESPECIALIZADOS
 // =====================================================
 
@@ -24,33 +90,61 @@ async function analyzerAgent(query: string, context: any): Promise<any> {
   // Detectar se é pergunta simples ou análise detalhada
   const isSimpleQuery = /^(quanto|qual|quais|quantos)\s+(gastei|ganhei|tenho|foi)/i.test(query.trim());
   
+  // 🔥 DETECTAR PERÍODO TEMPORAL NA PERGUNTA
+  const timePeriod = detectTimePeriod(query);
+  
+  // Buscar transações do período detectado
+  const { data: periodTransactions } = await supabaseAdmin
+    .from('transactions')
+    .select('*')
+    .eq('user_id', context.userId)
+    .gte('date', timePeriod.startDate)
+    .lte('date', timePeriod.endDate)
+    .order('date', { ascending: false });
+  
+  // Calcular estatísticas do período
+  const periodIncome = periodTransactions?.filter(t => t.type === 'receita').reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+  const periodExpense = periodTransactions?.filter(t => t.type === 'despesa').reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+  const periodBalance = periodIncome - periodExpense;
+  
+  // Categorias do período
+  const categoryTotals: Record<string, number> = {};
+  periodTransactions?.filter(t => t.type === 'despesa').forEach(t => {
+    categoryTotals[t.category] = (categoryTotals[t.category] || 0) + Number(t.amount);
+  });
+  const topCategoriesPeriod = Object.entries(categoryTotals)
+    .map(([category, amount]) => ({ category, amount }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 5);
+  
   const prompt = `
 Você é Spendly, assistente financeiro. Responda de forma ${isSimpleQuery ? 'DIRETA e OBJETIVA' : 'detalhada e profissional'}.
+
+**Período analisado: ${timePeriod.period}**
+
+**Dados do Período (${timePeriod.startDate} a ${timePeriod.endDate}):**
+- Receitas: R$ ${periodIncome.toFixed(2)}
+- Despesas: R$ ${periodExpense.toFixed(2)}
+- Saldo: R$ ${periodBalance.toFixed(2)}
+- Total de transações: ${periodTransactions?.length || 0}
 
 **Dados do Mês Atual (${new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}):**
 - Receitas: R$ ${context.profile.averageIncome.toFixed(2)}
 - Despesas: R$ ${context.profile.averageExpense.toFixed(2)}
 - Saldo: R$ ${(context.profile.averageIncome - context.profile.averageExpense).toFixed(2)}
-- Taxa de Economia: ${context.profile.savingsRate.toFixed(1)}%
-- Saúde Financeira: ${context.profile.financialHealth}
 
-**Top 3 Categorias de Gasto Este Mês:**
-${context.profile.topCategories.slice(0, 3).map((c: any) => `- ${c.category}: R$ ${c.amount.toFixed(2)}`).join('\n')}
-
-**Últimas 10 Transações:**
-${context.recentTransactions.slice(0, 10).map((t: any) => 
-  `- ${t.amount > 0 ? '+' : ''}R$ ${t.amount.toFixed(2)} (${t.category}) - ${new Date(t.date || t.created_at).toLocaleDateString('pt-BR')}`
-).join('\n')}
+**Top Categorias de Gasto no Período:**
+${topCategoriesPeriod.map((c: any) => `- ${c.category}: R$ ${c.amount.toFixed(2)}`).join('\n')}
 
 **Pergunta:** ${query}
 
 **IMPORTANTE:** 
 ${isSimpleQuery 
-  ? '⚡ Responda em 2-3 LINHAS, direto ao ponto. Use no máximo 1 emoji. Foque em números concretos. Exemplo: "Você gastou R$ 1.234,50 este mês. As maiores despesas foram Alimentação (R$ 450) e Transporte (R$ 300)."'
-  : '📊 Forneça análise completa com insights e recomendações práticas. Seja profissional e objetivo.'
+  ? '⚡ Responda em 2-3 LINHAS, direto ao ponto. Use no máximo 1 emoji. Foque em números concretos. SEMPRE mencione o período (ex: "Nos últimos 12 meses você gastou...").'
+  : '📊 Forneça análise completa com insights e recomendações práticas. Seja profissional e objetivo. Mencione o período claramente.'
 }
 
-Responda em português brasileiro com emojis apropriados.
+Responda em português brasileiro.
   `;
 
   const response = await generateText(prompt, 'simple', 0.3, 500);

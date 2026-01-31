@@ -394,7 +394,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Buscar todos os usuários com Telegram vinculado
     const { data: telegramLinks, error: linksError } = await supabase
       .from('telegram_links')
-      .select('user_id, chat_id, username');
+      .select('user_id, chat_id');
 
     if (linksError) {
       console.error('❌ Erro ao buscar telegram_links:', linksError);
