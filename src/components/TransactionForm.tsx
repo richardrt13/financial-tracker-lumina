@@ -513,7 +513,7 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
             await onSubmit(validatedData);
           } catch (zodError: any) {
             console.error("Zod validation error for voice command data:", zodError.errors);
-            let errorMessages = zodError.errors.map((err: any) => `${err.path.join('.')}: ${err.message}`).join('; ') || "Verifique os dados do comando de voz.";
+            const errorMessages = zodError.errors.map((err: any) => `${err.path.join('.')}: ${err.message}`).join('; ') || "Verifique os dados do comando de voz.";
             toast({ title: "Erro ao Validar Dados por Voz", description: errorMessages, variant: "destructive" });
           }
         }}

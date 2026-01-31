@@ -13,7 +13,63 @@ const redis = new Redis({
 });
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const generationModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+// =====================================================
+// TIPOS E INTERFACES AVANÇADAS
+// =====================================================
+
+interface AgentResponse {
+  content: string;
+  confidence: number;
+  toolsUsed: string[];
+  suggestedActions?: Action[];
+  metadata?: Record<string, any>;
+}
+
+interface Action {
+  type: 'create_transaction' | 'update_budget' | 'set_goal' | 'create_alert';
+  label: string;
+  description: string;
+  params: Record<string, any>;
+  priority: 'high' | 'medium' | 'low';
+}
+
+interface FinancialContext {
+  profile: FinancialProfile;
+  recentTransactions: any[];
+  trends: TrendAnalysis;
+  predictions: Prediction[];
+}
+
+interface FinancialProfile {
+  averageIncome: number;
+  averageExpense: number;
+  savingsRate: number;
+  topCategories: CategorySummary[];
+  financialHealth: 'excellent' | 'good' | 'fair' | 'poor';
+  monthlyGrowth: number;
+}
+
+interface CategorySummary {
+  category: string;
+  amount: number;
+  percentage: number;
+  trend: 'up' | 'down' | 'stable';
+}
+
+interface TrendAnalysis {
+  incomeGrowth: number;
+  expenseGrowth: number;
+  savingsGrowth: number;
+  anomalies: string[];
+}
+
+interface Prediction {
+  type: 'savings_goal' | 'expense_forecast' | 'income_forecast';
+  value: number;
+  timeframe: string;
+  confidence: number;
+}
 
 // =================================================================
 // --- ETAPA 1: DEFINIÇÃO DAS FERRAMENTAS (Tools) ---
