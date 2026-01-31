@@ -433,7 +433,8 @@ async function registerTransaction(userId: string, budgetId: string, chatId: num
         // categoria será ajustada abaixo
         amount: data.amount,
         // description será ajustada se for parcelado
-        payment_status: 'paid' 
+        status: 'verified', // Padrão para input direto do usuário ("Gastei...")
+        // is_completed: true // <-- REMOVIDO
     };
 
     if (!catData) {
