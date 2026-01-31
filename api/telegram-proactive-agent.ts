@@ -392,11 +392,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.log('✅ Keep-alive executado');
 
     // Buscar todos os usuários com Telegram vinculado
-    const { data: telegramLinks } = await supabase
+    const { data: telegramLinks, error: linksError } = await supabase
       .from('telegram_links')
       .select('user_id, chat_id, username');
 
+    if (linksError) {
+      console.error('❌ Erro ao buscar telegram_links:', linksError);
+      return res.status(500).json({ error: 'Database error', details: linksError });
+    }
+
     if (!telegramLinks || telegramLinks.length === 0) {
+      console.log('⚠️ Nenhum usuário com Telegram vinculado encontrado');
       return res.json({ message: 'Nenhum usuário com Telegram vinculado', sent: 0 });
     }
 
@@ -407,19 +413,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     for (const link of telegramLinks) {
       try {
+        console.log(`🔄 Processando usuário ${link.user_id} (chat: ${link.chat_id})...`);
+        
         // 1. Buscar contexto financeiro
         const context = await getFinancialContext(link.user_id, link.chat_id);
         if (!context) {
-          console.log(`[${link.user_id}] Contexto não disponível`);
+          console.log(`⚠️ [${link.user_id}] Contexto não disponível`);
+          results.push({
+            userId: link.user_id,
+            skipped: true,
+            reason: 'no_context'
+          });
           continue;
         }
+
+        console.log(`✅ [${link.user_id}] Contexto obtido - Despesas: R$ ${context.currentMonth.expense.toFixed(2)}`);
 
         // 2. Gerar insight com IA
         const insight = await generateProactiveInsight(context);
         if (!insight) {
-          console.log(`[${link.user_id}] Nenhum insight gerado`);
+          console.log(`⚠️ [${link.user_id}] Nenhum insight gerado (IA decidiu não enviar)`);
+          results.push({
+            userId: link.user_id,
+            skipped: true,
+            reason: 'no_insight'
+          });
           continue;
         }
+
+        console.log(`💡 [${link.user_id}] Insight gerado: ${insight.category}/${insight.priority} - "${insight.message.substring(0, 50)}..."`);
 
         // 3. Enviar mensagem
         const sent = await sendTelegramMessage(context.chatId, insight.message);
@@ -438,7 +460,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             reasoning: insight.reasoning,
           });
           
-          console.log(`✅ [${link.user_id}] Mensagem enviada (${insight.category}/${insight.priority})`);
+          console.log(`✅ [${link.user_id}] Mensagem enviada com sucesso (${insight.category}/${insight.priority})`);
+        } else {
+          console.error(`❌ [${link.user_id}] Falha ao enviar mensagem ao Telegram`);
+          results.push({
+            userId: link.user_id,
+            sent: false,
+            reason: 'telegram_send_failed'
+          });
         }
       } catch (userError) {
         console.error(`❌ Erro ao processar usuário ${link.user_id}:`, userError);
