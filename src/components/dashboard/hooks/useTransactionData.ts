@@ -105,7 +105,7 @@ export const useTransactionData = (userId: string | null, budgetId: string | nul
       });
 
       const enrichedDataPromises = transactionsForPeriod.map(async (transaction: Transaction) => {
-        let enrichedTransaction = { ...transaction };
+        const enrichedTransaction = { ...transaction };
 
         if ((transaction.type === 'despesa' || transaction.type === 'investimento') && transaction.linked_income_id) {
             const { data: linkedIncome, error: linkedIncomeError } = await supabase
@@ -142,7 +142,7 @@ export const useTransactionData = (userId: string | null, budgetId: string | nul
       const monthsList = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
       const currentMonthName = monthsList[currentMonthIndex];
       const currentYearStr = today.getFullYear().toString();
-      let newDueSoonTransactions: Transaction[] = [];
+      const newDueSoonTransactions: Transaction[] = [];
       let newDueSoonAmount = 0;
 
       enrichedData.forEach((transaction: Transaction) => {

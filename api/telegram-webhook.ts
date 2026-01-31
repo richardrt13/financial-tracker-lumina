@@ -267,7 +267,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
         const userIdFromCommand = parts[1];
         
         const { data: userBudgets } = await supabase.from('budgets').select('id, name').eq('user_id', userIdFromCommand).limit(1);
-        let defaultBudgetId = userBudgets?.[0]?.id || null;
+        const defaultBudgetId = userBudgets?.[0]?.id || null;
 
         await supabase.from('telegram_links').upsert({ 
             chat_id: chatId, 
@@ -423,7 +423,7 @@ async function registerTransaction(userId: string, budgetId: string, chatId: num
     
     // Definir data base
     const baseDateStr = data.date || new Date().toISOString().split('T')[0];
-    let baseDate = new Date(baseDateStr);
+    const baseDate = new Date(baseDateStr);
 
     // Preparar dados comuns com tipagem any para flexibilidade no loop de insercao
     const transactionBase: any = {

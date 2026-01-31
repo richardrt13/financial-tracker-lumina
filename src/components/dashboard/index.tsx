@@ -1,8 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/components/ui/use-toast";
 import { Loader2, Eye, EyeOff } from "lucide-react";
-import { FinancialAssistantChat } from '@/components/FinancialAssistantChat';
+import { FinancialAssistantChatV2 } from '@/components/FinancialAssistantChatV2';
 import { supabase } from '@/lib/supabase';
 import { Button } from "@/components/ui/button"; 
 
@@ -54,7 +53,6 @@ export function Dashboard({ budgetId }: DashboardProps) {
     completionData,
     transactionsData,
     dueSoonData,
-    allTransactionsHistory,
     fetchData
   } = useTransactionData(userId, budgetId, selectedYear, selectedMonth);
 
@@ -212,28 +210,10 @@ export function Dashboard({ budgetId }: DashboardProps) {
         onDeleteClick={handleDeleteDialogTransition}
         onToggleStatus={toggleTransactionStatus}
         isProcessing={isProcessing}
-        valuesVisible={valuesVisible}
       />
 
-
-      <Card className="mt-8">
-        <CardHeader>
-          <CardTitle>Assistente Financeiro</CardTitle>
-          <CardDescription>
-            Converse com nosso assistente para obter insights sobre suas finanças
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <FinancialAssistantChat
-            summaryData={summaryData}
-            transactionsData={transactionsData}
-            completionData={completionData}
-            selectedYear={selectedYear}
-            selectedMonth={selectedMonth}
-            allTransactionsHistory={allTransactionsHistory || []}
-          />
-        </CardContent>
-      </Card>
+      {/* Assistente Financeiro Inteligente V2 */}
+      <FinancialAssistantChatV2 />
     </div>
   );
 }
