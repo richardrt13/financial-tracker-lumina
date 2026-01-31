@@ -1,22 +1,25 @@
 // FilterControls.tsx
+import { CalendarIcon } from "lucide-react"
+import { format } from "date-fns"
 import { DateRange } from "react-day-picker"
-import { DatePickerWithRange } from "@/components/ui/date-range-picker"
+import { ptBR } from "date-fns/locale"
 import { 
   startOfMonth, 
   endOfMonth, 
   subDays, 
-  startOfYear,
-  endOfYear,
+  startOfYear, 
+  endOfYear, 
   subMonths
 } from "date-fns"
+
+import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import { Calendar } from "@/components/ui/calendar"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { useState, useEffect } from "react"
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 
 interface FilterControlsProps {
   dateRange: DateRange | undefined;
@@ -27,81 +30,79 @@ export function FilterControls({
   dateRange,
   setDateRange
 }: FilterControlsProps) {
-  const [preset, setPreset] = useState<string>("thisMonth");
 
-  // Helper to check if current range matches a preset
-  useEffect(() => {
-     // Simple logic to detect if the current manual selection matches a preset could go here
-     // For now, we just let it be loose. If user changes dateRange manually, preset might stay or we can clear it.
-     // Let's clear preset value if dateRange changes and doesn't match the logic, but that's complex to sync perfectly.
-     // We will just use the select to SET the range.
-  }, [dateRange]);
+  const presets = [
+    { label: "Hoje", getValue: () => { const t = new Date(); return { from: t, to: t } } },
+    { label: "Últimos 7 dias", getValue: () => { const t = new Date(); return { from: subDays(t, 6), to: t } } },
+    { label: "Últimos 30 dias", getValue: () => { const t = new Date(); return { from: subDays(t, 29), to: t } } },
+    { label: "Este Mês", getValue: () => { const t = new Date(); return { from: startOfMonth(t), to: endOfMonth(t) } } },
+    { label: "Mês Passado", getValue: () => { const t = new Date(); const m = subMonths(t, 1); return { from: startOfMonth(m), to: endOfMonth(m) } } },
+    { label: "Últimos 3 Meses", getValue: () => { const t = new Date(); return { from: subMonths(t, 3), to: t } } },
+    { label: "Últimos 6 Meses", getValue: () => { const t = new Date(); return { from: subMonths(t, 6), to: t } } },
+    { label: "Este Ano", getValue: () => { const t = new Date(); return { from: startOfYear(t), to: endOfYear(t) } } },
+    { label: "Últimos 12 Meses", getValue: () => { const t = new Date(); return { from: subMonths(t, 12), to: t } } },
+  ];
 
-  const handlePresetChange = (value: string) => {
-    setPreset(value);
-    const today = new Date();
-    
-    switch (value) {
-      case "today":
-        setDateRange({ from: today, to: today });
-        break;
-      case "last7":
-        setDateRange({ from: subDays(today, 6), to: today });
-        break;
-      case "last30":
-        setDateRange({ from: subDays(today, 29), to: today });
-        break;
-      case "thisMonth":
-        setDateRange({ from: startOfMonth(today), to: endOfMonth(today) });
-        break;
-      case "lastMonth":
-        const lastMonth = subMonths(today, 1);
-        setDateRange({ from: startOfMonth(lastMonth), to: endOfMonth(lastMonth) });
-        break;
-      case "last3Months":
-        setDateRange({ from: subMonths(today, 3), to: today });
-        break;
-        case "last6Months":
-        setDateRange({ from: subMonths(today, 6), to: today });
-        break;
-      case "thisYear":
-        setDateRange({ from: startOfYear(today), to: endOfYear(today) });
-        break;
-      case "last12Months":
-        setDateRange({ from: subMonths(today, 12), to: today });
-        break;
-    }
+  const handlePresetSelect = (preset: typeof presets[0]) => {
+    const newRange = preset.getValue();
+    setDateRange(newRange);
   };
 
   return (
-    <div className="flex flex-wrap gap-4 items-center">
-      <Select value={preset} onValueChange={handlePresetChange}>
-        <SelectTrigger className="w-[180px]">
-          <SelectValue placeholder="Período Rápido" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="today">Hoje</SelectItem>
-          <SelectItem value="last7">Últimos 7 dias</SelectItem>
-          <SelectItem value="last30">Últimos 30 dias</SelectItem>
-          <SelectItem value="thisMonth">Este Mês</SelectItem>
-          <SelectItem value="lastMonth">Mês Passado</SelectItem>
-          <SelectItem value="last3Months">Últimos 3 Meses</SelectItem>
-          <SelectItem value="last6Months">Últimos 6 Meses</SelectItem>
-          <SelectItem value="thisYear">Este Ano</SelectItem>
-          <SelectItem value="last12Months">Últimos 12 Meses</SelectItem>
-        </SelectContent>
-      </Select>
-
-      <div className="h-8 w-[1px] bg-border hidden sm:block" />
-
-      <DatePickerWithRange 
-        date={dateRange}
-        setDate={(range) => {
-            setPreset(""); // Clear preset if manual selection happens
-            setDateRange(range);
-        }}
-        className="w-[260px]"
-      />
+    <div className="flex items-center gap-2">
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            id="date"
+            variant={"outline"}
+            className={cn(
+              "w-[260px] sm:w-[300px] justify-start text-left font-normal",
+              !dateRange && "text-muted-foreground"
+            )}
+          >
+            <CalendarIcon className="mr-2 h-4 w-4" />
+            {dateRange?.from ? (
+              dateRange.to ? (
+                <>
+                  {format(dateRange.from, "dd/MM/yyyy", { locale: ptBR })} -{" "}
+                  {format(dateRange.to, "dd/MM/yyyy", { locale: ptBR })}
+                </>
+              ) : (
+                format(dateRange.from, "dd/MM/yyyy", { locale: ptBR })
+              )
+            ) : (
+              <span>Selecione um período</span>
+            )}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="end">
+          <div className="flex flex-col sm:flex-row">
+            <div className="flex flex-col gap-1 p-3 border-r overflow-y-auto max-h-[300px]">
+                {presets.map(preset => (
+                  <Button 
+                    key={preset.label}
+                    variant="ghost" 
+                    className="justify-start font-normal text-sm"
+                    onClick={() => handlePresetSelect(preset)}
+                  >
+                    {preset.label}
+                  </Button>
+                ))}
+            </div>
+            <div className="p-0">
+               <Calendar
+                initialFocus
+                mode="range"
+                defaultMonth={dateRange?.from}
+                selected={dateRange}
+                onSelect={setDateRange}
+                numberOfMonths={2}
+                locale={ptBR}
+              />
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
