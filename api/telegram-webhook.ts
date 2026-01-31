@@ -244,31 +244,39 @@ async function generateQueryResponse(userId: string, topics: string[], chatId?: 
 
     // Queries comuns
     if (topics.includes('saldo') || topics.includes('resumo_mensal') || topics.includes('geral')) {
-         const { data: transitions } = await supabase
+         const { data: transactions, error } = await supabase
             .from('transactions')
             .select('type, amount, category, date')
             .eq('user_id', userId)
             .gte('date', firstDay)
             .lte('date', lastDay);
 
-        if (transitions) {
-            const despesas = transitions.filter(t => t.type === 'despesa').reduce((acc, curr) => acc + Number(curr.amount), 0);
-            const receitas = transitions.filter(t => t.type === 'receita').reduce((acc, curr) => acc + Number(curr.amount), 0);
+        if (error) {
+            console.error('Erro ao buscar transações:', error);
+        }
+
+        if (transactions && transactions.length > 0) {
+            const despesas = transactions.filter(t => t.type === 'despesa').reduce((acc, curr) => acc + Number(curr.amount), 0);
+            const receitas = transactions.filter(t => t.type === 'receita').reduce((acc, curr) => acc + Number(curr.amount), 0);
             const refMonth = months[now.getMonth()];
-            contextData += `Resumo (${refMonth}): Receitas R$ ${receitas.toFixed(2)}, Despesas R$ ${despesas.toFixed(2)}. Saldo do mês: R$ ${(receitas - despesas).toFixed(2)}. `;
+            contextData += `Resumo (${refMonth}): Receitas R$ ${receitas.toFixed(2)}, Despesas R$ ${despesas.toFixed(2)}. Saldo do mês: R$ ${(receitas - despesas).toFixed(2)}. Total de transações: ${transactions.length}. `;
         }
     }
     
     if (topics.includes('gastos_categoria')) {
-        const { data: byCategory } = await supabase
+        const { data: byCategory, error } = await supabase
              .from('transactions')
              .select('category, amount')
              .eq('user_id', userId)
              .eq('type', 'despesa')
              .gte('date', firstDay)
              .lte('date', lastDay);
+        
+        if (error) {
+            console.error('Erro ao buscar gastos por categoria:', error);
+        }
              
-        if (byCategory) {
+        if (byCategory && byCategory.length > 0) {
             const catTotals: Record<string, number> = {};
             byCategory.forEach(t => { catTotals[t.category] = (catTotals[t.category] || 0) + Number(t.amount); });
             contextData += `Gastos por Categoria este mês: ${JSON.stringify(catTotals)}. `;
@@ -286,14 +294,21 @@ async function generateQueryResponse(userId: string, topics: string[], chatId?: 
         }
     }
 
+    // Log para debug
+    console.log(`[Telegram Query] userId: ${userId}, topics: ${topics.join(',')}, contextData length: ${contextData.length}`);
+    
+    // Se não encontrou dados, retornar mensagem mais útil
+    if (!contextData || contextData.trim() === "") {
+        return "Ainda não encontrei transações no mês atual. Registre algumas transações primeiro (ex: 'Almoço 50 reais') e depois posso te ajudar com análises! 💰";
+    }
+
     // Gerar resposta final com LLM
     const prompt = `
         Você é Spendly, assistente financeiro do Telegram.
         
-        Dados financeiros: ${contextData || "Sem dados recentes."}${historyContext}
+        Dados financeiros: ${contextData}${historyContext}
         
         Responda de forma natural, amigável e resumida (2-3 linhas).
-        Se não tiver dados, diga que não encontrou transações recentes.
         Use emojis apropriados.
     `;
     const llmResponse = await generateText(prompt, 'simple', 0.7, 300);

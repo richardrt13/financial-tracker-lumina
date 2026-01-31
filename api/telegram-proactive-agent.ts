@@ -373,6 +373,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     console.log('🤖 Agente proativo iniciado:', new Date().toISOString());
 
+    // 🔥 KEEP-ALIVE: Ping nos serviços para evitar sleep/archive
+    console.log('⚡ Executando keep-alive nos serviços...');
+    
+    // Ping Supabase (query simples)
+    await supabase.from('telegram_links').select('count', { count: 'exact', head: true });
+    
+    // Ping Redis (get simples)
+    await redis.get('keep_alive_ping');
+    
+    console.log('✅ Keep-alive executado');
+
     // Buscar todos os usuários com Telegram vinculado
     const { data: telegramLinks } = await supabase
       .from('telegram_links')
