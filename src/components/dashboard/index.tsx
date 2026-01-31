@@ -1,13 +1,14 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { toast } from "@/components/ui/use-toast";
-import { Loader2, Eye, EyeOff } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { FinancialAssistantChatV2 } from '@/components/FinancialAssistantChatV2';
 import { supabase } from '@/lib/supabase';
 import { Button } from "@/components/ui/button"; 
+import { DateRange } from "react-day-picker";
+import { startOfMonth, endOfMonth } from "date-fns";
 
 import { FilterControls } from './ui/FilterControls';
 import { SummaryCards } from './ui/SummaryCards';
-import { DueSoonAlert } from './ui/DueSoonAlert';
 import { TransactionDetailsDialog } from './dialogs/TransactionDetailsDialog';
 import { EditTransactionDialog } from './dialogs/EditTransactionDialog';
 import { DeleteTransactionDialog } from './dialogs/DeleteTransactionDialog';
@@ -22,14 +23,9 @@ interface DashboardProps {
 }
 
 export function Dashboard({ budgetId }: DashboardProps) {
-  const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    const currentMonthIndex = new Date().getMonth();
-    const months = [
-      "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-      "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
-    ];
-    return months[currentMonthIndex];
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+    from: startOfMonth(new Date()),
+    to: endOfMonth(new Date()),
   });
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -37,7 +33,7 @@ export function Dashboard({ budgetId }: DashboardProps) {
   const [isDueSoonDialogOpen, setIsDueSoonDialogOpen] = useState(false);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [valuesVisible, setValuesVisible] = useState(true);
+  const [valuesVisible] = useState(true);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -54,7 +50,7 @@ export function Dashboard({ budgetId }: DashboardProps) {
     transactionsData,
     dueSoonData,
     fetchData
-  } = useTransactionData(userId, budgetId, selectedYear, selectedMonth);
+  } = useTransactionData(userId, budgetId, dateRange);
 
   const {
     isProcessing,
@@ -134,27 +130,17 @@ export function Dashboard({ budgetId }: DashboardProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <FilterControls
-          selectedYear={selectedYear}
-          selectedMonth={selectedMonth}
-          onYearChange={setSelectedYear}
-          onMonthChange={setSelectedMonth}
-        />
-
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setValuesVisible(!valuesVisible)}
-          >
-            {valuesVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </Button>
-          <DueSoonAlert
-            dueSoonData={dueSoonData}
-            onShowDetails={() => setIsDueSoonDialogOpen(true)}
-          />
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Dashboard Financeiro</h2>
+          <p className="text-muted-foreground">
+             Visão geral das suas finanças
+          </p>
         </div>
+        <FilterControls 
+          dateRange={dateRange}
+          setDateRange={setDateRange}
+        />
       </div>
 
       {isLoading && !isProcessing ? (
@@ -175,8 +161,7 @@ export function Dashboard({ budgetId }: DashboardProps) {
         onOpenChange={setIsDialogOpen}
         selectedType={selectedType}
         transactions={selectedTypeTransactions}
-        selectedMonth={selectedMonth}
-        selectedYear={selectedYear}
+        dateRange={dateRange} // Update prop
         onEditClick={handleEditDialogTransition}
         onDeleteClick={handleDeleteDialogTransition}
         onToggleStatus={toggleTransactionStatus}

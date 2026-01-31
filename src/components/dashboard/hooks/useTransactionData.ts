@@ -12,8 +12,10 @@ import {
 } from '../types';
 import { sortTransactionsByDueDay } from '../utils/helpers';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import { DateRange } from "react-day-picker" // Add import
+import { format } from "date-fns"; // Check utils
 
-export const useTransactionData = (userId: string | null, budgetId: string | null, selectedYear: string, selectedMonth: string) => {
+export const useTransactionData = (userId: string | null, budgetId: string | null, dateRange: DateRange | undefined) => {
   const [isLoading, setIsLoading] = useState(true);
   const [summaryData, setSummaryData] = useState<SummaryData>({
     receita: 0, despesa: 0, investimento: 0, saldo: 0,
@@ -59,7 +61,7 @@ export const useTransactionData = (userId: string | null, budgetId: string | nul
   }, [userId, budgetId]);
 
   const fetchData = useCallback(async () => {
-    if (!userId || !budgetId) {
+    if (!userId || !budgetId || !dateRange || !dateRange.from) { // Check dateRange
       // console.log("RT: fetchData - Skipping, no userId or budgetId.");
       // Reset states to avoid showing stale data from a previous budget
       setTransactionsData({ receita: [], despesa: [], investimento: [] });
@@ -74,7 +76,6 @@ export const useTransactionData = (userId: string | null, budgetId: string | nul
       return;
     }
     
-    // console.log(`RT: fetchData - Fetching for userId: ${userId}, budgetId: ${budgetId}, Period: ${selectedMonth}/${selectedYear}`);
     setIsLoading(true);
     try {
       let query = supabase
@@ -82,10 +83,14 @@ export const useTransactionData = (userId: string | null, budgetId: string | nul
         .select('*')
         .eq('user_id', userId)
         .eq('budget_id', budgetId)
-        .eq('year', selectedYear);
-      if (selectedMonth !== "Todos os Meses") {
-        query = query.eq('month', selectedMonth);
+        .gte('date', format(dateRange.from, 'yyyy-MM-dd')); // Filter by date range start
+
+      if (dateRange.to) {
+         query = query.lte('date', format(dateRange.to, 'yyyy-MM-dd')); // Filter by date range end
+      } else {
+         query = query.lte('date', format(dateRange.from, 'yyyy-MM-dd')); // Single day fallback if 'to' is undefined
       }
+
       const { data: rawTransactions, error } = await query;
 
       if (error) {
@@ -196,7 +201,7 @@ export const useTransactionData = (userId: string | null, budgetId: string | nul
     } finally {
       setIsLoading(false);
     }
-  }, [userId, budgetId, selectedYear, selectedMonth]);
+  }, [userId, budgetId, dateRange]); // Update dependency
 
   useEffect(() => { 
     // console.log("RT: fetchData or its deps changed, re-evaluating data fetch.");
@@ -283,7 +288,7 @@ export const useTransactionData = (userId: string | null, budgetId: string | nul
       // console.log(`RT: [${budgetId}] Cleaning up Realtime subscription for ${channelName}`);
       if (channel) {
         supabase.removeChannel(channel)
-          .then(removeStatus => {
+          .then(() => { // Removed unused removeStatus
             // console.log(`RT: [${budgetId}] Channel ${channelName} removed with status: ${removeStatus}`);
           })
           .catch(removeError => {

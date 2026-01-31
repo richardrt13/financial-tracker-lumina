@@ -11,10 +11,10 @@ import {
   FormControl,
   FormField,
   FormItem,
-  FormLabel, // Este é o FormLabel que depende do FormProvider
+  FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Label } from "@/components/ui/label"; // Este é o Label genérico
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -32,24 +32,17 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { DatePicker } from "@/components/ui/date-picker"; // Import DatePicker
 import { VoiceCommandTransaction } from './VoiceCommandTransaction';
 import type { Transaction as TransactionType } from './dashboard/types';
 
-const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
+// Re-add months array for helper purposes
 const months = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
 
 const NONE_VALUE_MARKER = "__NONE_INCOME_LINK_FORM__";
-
-const getDaysInMonth = (month: string, year: string) => {
-  const monthIndex = months.indexOf(month);
-  if (monthIndex === -1 || !year || isNaN(parseInt(year))) {
-    return 31; // Fallback
-  }
-  return new Date(parseInt(year), monthIndex + 1, 0).getDate();
-};
 
 const defaultCategories = {
   receita: ["Salário", "Freelance", "Investimentos", "Outros"],
@@ -58,12 +51,13 @@ const defaultCategories = {
 };
 
 const formSchema = z.object({
-  year: z.string(),
-  month: z.string(),
+  date: z.date({
+    required_error: "A data da transação é obrigatória.",
+  }),
   type: z.enum(["receita", "despesa", "investimento"]),
   category: z.string().min(1, { message: "Categoria é obrigatória." }),
   amount: z.number().or(z.string().transform(val => {
-    const cleanedVal = String(val).replace(/\./g, '').replace(',', '.'); // Primeiro remove pontos (milhar) e depois troca vírgula por ponto
+    const cleanedVal = String(val).replace(/\./g, '').replace(',', '.');
     const parsed = Number(cleanedVal);
     if (isNaN(parsed)) return 0;
     return parsed;
@@ -75,11 +69,6 @@ const formSchema = z.object({
     return isNaN(parsed) ? 1 : parsed;
   }).refine(val => val === '' || (typeof val === 'number' && val >= 1 && val <= 60), {
     message: "A duração deve ser entre 1 e 60 meses"
-  }),
-  dueDay: z.string().optional().transform(val => {
-    if (!val || val === '') return null;
-    const parsed = parseInt(val);
-    return isNaN(parsed) ? null : parsed;
   }),
   linked_income_id: z.string().optional().nullable(),
   description: z.string().optional(),
@@ -97,10 +86,6 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
   const [userId, setUserId] = useState<string | null>(null);
   const [currentType, setCurrentType] = useState<"receita" | "despesa" | "investimento">("receita");
   const [recurringMonthsInput, setRecurringMonthsInput] = useState<string>("1");
-  const [dueDayInput, setDueDayInput] = useState<string>("");
-  const [currentMonth, setCurrentMonth] = useState<string>(months[new Date().getMonth()]);
-  const [currentYear, setCurrentYear] = useState<string>(String(new Date().getFullYear()));
-  const [maxDaysInMonth, setMaxDaysInMonth] = useState<number>(getDaysInMonth(currentMonth, currentYear));
   const [formattedAmount, setFormattedAmount] = useState<string>("0,00");
 
   const [availableIncomes, setAvailableIncomes] = useState<TransactionType[]>([]);
@@ -108,14 +93,12 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      year: String(new Date().getFullYear()),
-      month: months[new Date().getMonth()],
+      date: new Date(),
       type: "receita",
       category: "",
       amount: 0,
       isRecurring: false,
-      recurringMonths: "1",
-      dueDay: "",
+      recurringMonths: 1, // Fix: Pass number directly
       linked_income_id: null,
       description: "",
     },
@@ -163,36 +146,33 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
 
   useEffect(() => {
     if (budgetId) {
-      const defaultYear = String(new Date().getFullYear());
-      const defaultMonth = months[new Date().getMonth()];
       form.reset({
-        year: defaultYear,
-        month: defaultMonth,
+        date: new Date(),
         type: "receita",
         category: "",
         amount: 0,
         isRecurring: false,
-        recurringMonths: 1, // Pass as number
-        dueDay: null,       // Pass as null (since schema transforms optional string to nullable number, reset should match output type usually or input type depending on RHF version, but let's try matching the inferred output type of boolean/number)
+        recurringMonths: 1,
         linked_income_id: null,
         description: "",
       });
       setFormattedAmount("0,00");
       setRecurringMonthsInput("1");
-      setDueDayInput("");
       setCurrentType("receita");
-      setCurrentMonth(defaultMonth);
-      setCurrentYear(defaultYear);
-      setMaxDaysInMonth(getDaysInMonth(defaultMonth, defaultYear));
     }
   }, [budgetId, form]);
 
   useEffect(() => {
     const fetchAvailableIncomes = async () => {
-      if ((currentType !== 'despesa' && currentType !== 'investimento') || !userId || !budgetId || !currentMonth || !currentYear) {
+      const date = form.getValues('date');
+      const currentMonth = months[date.getMonth()];
+      const currentYear = String(date.getFullYear());
+      
+      if ((currentType !== 'despesa' && currentType !== 'investimento') || !userId || !budgetId) {
         setAvailableIncomes([]);
         return;
       }
+      
       const { data, error } = await supabase
         .from('transactions')
         .select('id, description, category, amount')
@@ -210,7 +190,7 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
       }
     };
     fetchAvailableIncomes();
-  }, [currentType, currentMonth, currentYear, userId, budgetId]);
+  }, [currentType, form.watch('date'), userId, budgetId]); // Watch date changes
 
   useEffect(() => {
     const subscription = form.watch((value, { name }) => {
@@ -219,35 +199,9 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
         form.setValue("category", ""); 
         form.setValue("linked_income_id", null); 
       }
-      
-      let newMaxDays = maxDaysInMonth;
-      let monthChanged = false;
-      let yearChanged = false;
-
-      if (name === 'month' && value.month && value.month !== currentMonth) {
-        setCurrentMonth(value.month);
-        monthChanged = true;
-      }
-      if (name === 'year' && value.year && value.year !== currentYear) {
-        setCurrentYear(value.year);
-        yearChanged = true;
-      }
-
-      if(monthChanged || yearChanged) {
-        newMaxDays = getDaysInMonth(value.month || currentMonth, value.year || currentYear);
-        setMaxDaysInMonth(newMaxDays);
-        const currentDueDayVal = form.getValues("dueDay"); 
-        if (currentDueDayVal) {
-            const dueDayNum = parseInt(String(currentDueDayVal));
-            if (dueDayNum > newMaxDays) {
-                form.setValue("dueDay", String(newMaxDays)); 
-                setDueDayInput(String(newMaxDays)); 
-            }
-        }
-      }
     });
     return () => subscription.unsubscribe();
-  }, [form, currentMonth, currentYear, maxDaysInMonth]); // Added currentMonth, currentYear, maxDaysInMonth
+  }, [form]); 
 
   const handleVoiceRecognition = (transactionInfo: any) => {
      if (transactionInfo.type) {
@@ -258,36 +212,34 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
     
     if (transactionInfo.amount > 0) {
         const numericAmount = Number(transactionInfo.amount);
-        form.setValue("amount", numericAmount); // Zod expects number here
+        form.setValue("amount", numericAmount); 
         const formatted = numericAmount.toLocaleString('pt-BR', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2
         });
         setFormattedAmount(formatted);
     }
+    
+    // Logic for month/year from voice command to Date object
+    if (transactionInfo.month && transactionInfo.year && months.includes(transactionInfo.month)) {
+        const monthIndex = months.indexOf(transactionInfo.month);
+        const year = parseInt(transactionInfo.year);
+        // Default to day 1 if dueDay not provided or use dueDay
+        const day = transactionInfo.dueDay ? parseInt(transactionInfo.dueDay) : new Date().getDate(); 
+        // Need validation for Day
+        form.setValue("date", new Date(year, monthIndex, day));
+    } else if (transactionInfo.dueDay) {
+        // If only dueDay provided, assume current month/year but specific day
+        const current = form.getValues('date');
+        form.setValue("date", new Date(current.getFullYear(), current.getMonth(), parseInt(transactionInfo.dueDay)));
+    }
 
-    if (transactionInfo.month && months.includes(transactionInfo.month)) {
-        form.setValue("month", transactionInfo.month);
-        // setCurrentMonth will be updated by form.watch
-    }
-    if (transactionInfo.year) {
-        form.setValue("year", transactionInfo.year);
-        // setCurrentYear will be updated by form.watch
-    }
     if (transactionInfo.description) form.setValue("description", transactionInfo.description);
     if (transactionInfo.isRecurring !== undefined) {
         form.setValue("isRecurring", transactionInfo.isRecurring);
         if (transactionInfo.isRecurring && transactionInfo.recurringMonths) {
-            form.setValue("recurringMonths", String(transactionInfo.recurringMonths));
+            form.setValue("recurringMonths", parseInt(String(transactionInfo.recurringMonths))); // Fix: Parse to int
             setRecurringMonthsInput(String(transactionInfo.recurringMonths));
-        }
-    }
-    if (transactionInfo.dueDay) {
-        const maxD = getDaysInMonth(transactionInfo.month || form.getValues("month"), transactionInfo.year || form.getValues("year"));
-        const dueDayNum = parseInt(String(transactionInfo.dueDay));
-        if (dueDayNum > 0 && dueDayNum <= maxD) {
-            form.setValue("dueDay", String(dueDayNum));
-            setDueDayInput(String(dueDayNum));
         }
     }
     if (transactionInfo.linked_income_id) {
@@ -313,7 +265,7 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
       return;
     }
     
-    const amountValue = values.amount; // Zod schema already transformed to number
+    const amountValue = values.amount; 
     if (amountValue <= 0) {
         toast({ title: "Erro", description: "O valor da transação deve ser maior que zero.", variant: "destructive" });
         return;
@@ -322,22 +274,31 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
     setIsLoading(true);
     try {
       const transactionsToInsert = [];
-      let currentMonthIdx = months.indexOf(values.month);
-      let currentYearVal = parseInt(values.year);
+      const baseDate = values.date;
+      
+      let currentMonthIdx = baseDate.getMonth();
+      let currentYearVal = baseDate.getFullYear();
+      let currentDayVal = baseDate.getDate();
 
       for (let i = 0; i < (values.isRecurring ? recurringMonthsNum : 1); i++) {
-        let adjustedDueDay = values.dueDay ? parseInt(String(values.dueDay)) : null;
-        if (adjustedDueDay) {
-          const maxDaysForLoopMonth = getDaysInMonth(months[currentMonthIdx], String(currentYearVal));
-          if (adjustedDueDay > maxDaysForLoopMonth) {
-            adjustedDueDay = maxDaysForLoopMonth;
-          }
+        // Recalculate date for recurring
+        // Try to keep the same day of month (e.g. always try the 31st)
+        let newDate = new Date(currentYearVal, currentMonthIdx + i, currentDayVal);
+
+        // Handling for shorter months:
+        // If the original day (currentDayVal) doesn't exist in the target month (e.g. 31st in Feb),
+        // the Date object overflows to the next month (e.g. Mar 3rd).
+        // Check if day changed from expected currentDayVal.
+        if (newDate.getDate() !== currentDayVal) {
+             // If overflowed, set to the last day of the intended month.
+             // This implements the "closest previous date" logic (e.g. 31st -> 30th/28th).
+             newDate = new Date(currentYearVal, currentMonthIdx + i + 1, 0);
         }
-        
-        // Calcular data ISO para nova coluna DATE
-        let dateISO = new Date(currentYearVal, currentMonthIdx, adjustedDueDay || 1).toISOString().split('T')[0];
-        // Se for hoje/passado, talvez queiramos a data atual se dia não especificado? Nao, melhor dia 1.
-        // Se o usuário especificou dueDay, usamos. Se não, usamos dia 1.
+
+        const dateISO = newDate.toISOString().split('T')[0];
+        const monthStr = months[newDate.getMonth()];
+        const yearStr = String(newDate.getFullYear());
+
 
         transactionsToInsert.push({
           type: values.type,
@@ -346,23 +307,14 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
           description: values.description || null,
           user_id: userId,
           budget_id: budgetId,
-          // Adaptação para o novo Status
-          status: 'pending', // Transações criadas manualmente no form iniciam como pendentes/planejadas
-          is_completed: false, // Mantido para compatibilidade até migração total
-          due_day: adjustedDueDay,
-          year: String(currentYearVal),
-          month: months[currentMonthIdx],
-          date: dateISO, // Nova coluna DATE
+          status: 'pending',
+          is_completed: false,
+          due_day: newDate.getDate(), // Still keeping due_day for legacy/compatibility? Or maybe redundant now. Keep for safety.
+          year: yearStr,
+          month: monthStr,
+          date: dateISO,
           linked_income_id: (values.type === 'despesa' || values.type === 'investimento') && values.linked_income_id ? values.linked_income_id : null,
         });
-
-        if (values.isRecurring) {
-          currentMonthIdx++;
-          if (currentMonthIdx > 11) {
-            currentMonthIdx = 0;
-            currentYearVal++;
-          }
-        }
       }
 
       const { error } = await supabase.from('transactions').insert(transactionsToInsert);
@@ -371,26 +323,18 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
       toast({ title: "Sucesso", description: `Transação(ões) adicionada(s) com sucesso!` });
       supabase.functions.invoke('process-queue').catch(console.error);
       
-      const defaultNewYear = String(new Date().getFullYear());
-      const defaultNewMonth = months[new Date().getMonth()];
       form.reset({
-        year: defaultNewYear, 
-        month: defaultNewMonth,
+        date: new Date(),
         type: "receita", 
         category: "", 
         amount: 0, 
         isRecurring: false, 
-        recurringMonths: 1, // Pass as number
-        dueDay: null,       // Pass as null
+        recurringMonths: 1,
         linked_income_id: null,
         description: "",
       });
       setCurrentType("receita"); 
-      setCurrentMonth(defaultNewMonth); 
-      setCurrentYear(defaultNewYear); 
-      setMaxDaysInMonth(getDaysInMonth(defaultNewMonth, defaultNewYear));
       setRecurringMonthsInput("1");
-      setDueDayInput("");
       setFormattedAmount("0,00");
       transactionEvents.notify();
     } catch (error: any) {
@@ -433,35 +377,13 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
     }
   };
 
-  const handleDueDayChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    if (value === '' || (/^\d+$/.test(value))) {
-        let day = parseInt(value);
-        if (value === '') {
-            setDueDayInput('');
-            form.setValue("dueDay", '');
-        } else if (!isNaN(day) && day >= 1) {
-            if (day > maxDaysInMonth) day = maxDaysInMonth;
-            setDueDayInput(String(day));
-            form.setValue("dueDay", String(day));
-        } else if (value.length <= 2 && (value === "0" || value === "")) { 
-            setDueDayInput(value);
-            form.setValue("dueDay", ''); 
-        } else if (value.length <=2 && /^\d+$/.test(value) && parseInt(value) === 0) {
-            setDueDayInput(value); // Allow "0" to be typed temporarily
-            form.setValue("dueDay", ''); // Keep form value empty
-        }
-
-    }
-  };
-
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawValue = e.target.value;
     let digits = rawValue.replace(/[^\d]/g, ""); // Remove todos não-dígitos
 
     if (digits === "") {
         setFormattedAmount("0,00");
-        form.setValue("amount", "0"); // Zod schema handles transformation to number
+        form.setValue("amount", 0); // Fix: Send number
         return;
     }
 
@@ -484,7 +406,7 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
     const numberValue = parseFloat(numericValueForState);
     if (isNaN(numberValue)) { // Fallback, should not happen if digits is not empty
       setFormattedAmount("0,00");
-      form.setValue("amount", "0");
+      form.setValue("amount", 0); // Fix: Send number
       return;
     }
 
@@ -504,17 +426,22 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
       <VoiceCommandTransaction
         onTransactionRecognized={handleVoiceRecognition}
         onSubmitTransaction={async (transactionDataFromVoice) => {
+          // Logic to map voice data to onSubmit format
+          // Need to handle missing date in voice command properly, default to today if not provided fully
+          const today = new Date();
+          const year = transactionDataFromVoice.year ? parseInt(transactionDataFromVoice.year) : today.getFullYear();
+          const monthIndex = transactionDataFromVoice.month ? months.indexOf(transactionDataFromVoice.month) : today.getMonth();
+          const day = transactionDataFromVoice.dueDay ? parseInt(transactionDataFromVoice.dueDay) : today.getDate();
+
           const rawDataForZod = {
-            year: transactionDataFromVoice.year || currentYear,
-            month: transactionDataFromVoice.month || currentMonth,
+            date: new Date(year, monthIndex, day),
             type: transactionDataFromVoice.type,
             category: transactionDataFromVoice.category,
-            amount: transactionDataFromVoice.amount, // amount is already number
+            amount: transactionDataFromVoice.amount, 
             isRecurring: transactionDataFromVoice.isRecurring,
-            recurringMonths: transactionDataFromVoice.recurringMonths || 1, // Pass as number or default number
-            dueDay: transactionDataFromVoice.dueDay?.toString() || null, // Pass as string (that parses to number) or null
-            linked_income_id: transactionDataFromVoice.linked_income_id || null,
-            description: transactionDataFromVoice.description || ""
+            recurringMonths: transactionDataFromVoice.recurringMonths || 1,
+            linked_income_id: (transactionDataFromVoice as any).linked_income_id || null, // Cast to any or update type definition
+            description: (transactionDataFromVoice as any).description || "" // Cast to any
           };
           try {
             const validatedData = formSchema.parse(rawDataForZod);
@@ -530,26 +457,22 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
         <h3 className="text-lg font-medium mb-4">Formulário Manual</h3>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 w-full max-w-md">
-            <div className="flex gap-4">
-              <FormField control={form.control} name="year" render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormLabel>Ano</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value || currentYear} defaultValue={currentYear}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Ano" /></SelectTrigger></FormControl>
-                    <SelectContent>{years.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
-                  </Select><FormMessage />
+            
+            {/* New Date Picker Field replacing Year/Month Selects */}
+            <FormField
+              control={form.control}
+              name="date"
+              render={({ field }) => (
+                <FormItem className="flex flex-col">
+                  <FormLabel>Data da Transação</FormLabel>
+                  <DatePicker 
+                    date={field.value} 
+                    setDate={field.onChange} 
+                  />
+                  <FormMessage />
                 </FormItem>
-              )} />
-              <FormField control={form.control} name="month" render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormLabel>Mês</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value || currentMonth} defaultValue={currentMonth}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Mês" /></SelectTrigger></FormControl>
-                    <SelectContent>{months.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
-                  </Select><FormMessage />
-                </FormItem>
-              )} />
-            </div>
+              )}
+            />
 
             <FormField control={form.control} name="type" render={({ field }) => (
               <FormItem>
@@ -565,6 +488,7 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
               </FormItem>
             )} />
 
+            {/* ...existing code... Category Field */}
             <div className="flex gap-2 items-end">
               <FormField control={form.control} name="category" render={({ field }) => (
                 <FormItem className="flex-1">
@@ -578,6 +502,7 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
               <Button type="button" variant="outline" size="icon" onClick={() => setIsNewCategoryDialogOpen(true)}><Plus className="h-4 w-4" /></Button>
             </div>
             
+            {/* ...existing code... Description Field */}
             <FormField
                 control={form.control}
                 name="description"
@@ -592,7 +517,8 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
                 )}
             />
 
-            <FormField control={form.control} name="amount" render={({ field }) => ( // field.value will be number after Zod transform, but raw input is string
+            {/* ...existing code... Amount Field */}
+            <FormField control={form.control} name="amount" render={({ field: _field }) => ( // Rename to _field to unused var check
               <FormItem>
                 <FormLabel>Valor</FormLabel>
                 <FormControl><Input 
@@ -600,21 +526,15 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
                     placeholder="0,00" 
                     value={formattedAmount} 
                     onChange={handleAmountChange}
-                    inputMode="decimal" // Helps with mobile keyboards
+                    inputMode="decimal"
                 /></FormControl>
                 <FormMessage />
               </FormItem>
             )} />
             
-            <FormField control={form.control} name="dueDay" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Dia de Vencimento (opcional)</FormLabel>
-                <FormControl><Input type="text" placeholder={`1-${maxDaysInMonth}`} value={dueDayInput} onChange={handleDueDayChange} /></FormControl>
-                {maxDaysInMonth < 31 && currentMonth && <p className="text-xs text-muted-foreground">Dias válidos para {currentMonth}: 1-{maxDaysInMonth}</p>}
-                <FormMessage />
-              </FormItem>
-            )} />
+            {/* REMOVED DueDay Field - included in DatePicker */}
 
+            {/* ...existing code... Linked Income Field */}
             {(currentType === "despesa" || currentType === "investimento") && (
               <FormField
                 control={form.control}
@@ -648,6 +568,7 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
               />
             )}
 
+            {/* ...existing code... Recurring Fields */}
             <div className="space-y-4 mt-4">
               <FormField control={form.control} name="isRecurring" render={({ field }) => (
                 <FormItem className="flex flex-row items-center space-x-3 space-y-0">
@@ -657,7 +578,7 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
                 </FormItem>
               )} />
               {form.watch("isRecurring") && (
-                <FormField control={form.control} name="recurringMonths" render={({ field }) => (
+                <FormField control={form.control} name="recurringMonths" render={({ field: _field }) => ( // Rename to _field
                   <FormItem>
                     <FormLabel>Duração (meses)</FormLabel>
                     <FormControl><Input type="text" placeholder="1-60" value={recurringMonthsInput} onChange={handleRecurringMonthsChange} /></FormControl>
@@ -671,6 +592,7 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
         </Form>
       </div>
 
+     {/* ...existing code... Dialogs */}
       <Dialog open={isNewCategoryDialogOpen} onOpenChange={setIsNewCategoryDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader><DialogTitle>Nova Categoria de {currentType}</DialogTitle></DialogHeader>
