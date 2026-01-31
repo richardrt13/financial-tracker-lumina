@@ -60,6 +60,8 @@ CREATE TABLE public.transactions (
   budget_id bigint,
   linked_income_id text,
   embedding USER-DEFINED,
+  date date,
+  status text DEFAULT 'pending'::text,
   CONSTRAINT transactions_pkey PRIMARY KEY (id),
   CONSTRAINT transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );

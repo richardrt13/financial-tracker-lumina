@@ -231,14 +231,78 @@ async function understandIntention(text: string, userId: string): Promise<{
     }
 }
 
+// Função para detectar período temporal na pergunta
+function detectTimePeriod(query: string): { startDate: string; endDate: string; period: string } {
+    const now = new Date();
+    const queryLower = query.toLowerCase();
+    
+    // Últimos X meses
+    const lastMonthsMatch = queryLower.match(/(?:últimos?|ultimos?|nos)\s+(\d+)\s+(?:meses|mes)/i);
+    if (lastMonthsMatch) {
+        const months = parseInt(lastMonthsMatch[1]);
+        const startDate = new Date(now.getFullYear(), now.getMonth() - months + 1, 1).toISOString().split('T')[0];
+        const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+        return { startDate, endDate, period: `últimos ${months} meses` };
+    }
+    
+    // Últimos X anos
+    const lastYearsMatch = queryLower.match(/(?:últimos?|ultimos?|nos)\s+(\d+)\s+(?:anos?|ano)/i);
+    if (lastYearsMatch) {
+        const years = parseInt(lastYearsMatch[1]);
+        const startDate = new Date(now.getFullYear() - years, 0, 1).toISOString().split('T')[0];
+        const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+        return { startDate, endDate, period: `últimos ${years} anos` };
+    }
+    
+    // Este ano
+    if (queryLower.match(/(?:este|neste|no|do)\s+ano/i)) {
+        const startDate = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
+        const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+        return { startDate, endDate, period: 'este ano' };
+    }
+    
+    // Ano específico (2025, 2024, etc)
+    const yearMatch = queryLower.match(/\b(202[0-9])\b/);
+    if (yearMatch) {
+        const year = parseInt(yearMatch[1]);
+        const startDate = new Date(year, 0, 1).toISOString().split('T')[0];
+        const endDate = new Date(year, 11, 31).toISOString().split('T')[0];
+        return { startDate, endDate, period: `ano ${year}` };
+    }
+    
+    // Mês específico (janeiro, fevereiro, etc)
+    const monthNames = ['janeiro', 'fevereiro', 'março', 'marco', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    for (let i = 0; i < monthNames.length; i++) {
+        if (queryLower.includes(monthNames[i])) {
+            const startDate = new Date(now.getFullYear(), i, 1).toISOString().split('T')[0];
+            const endDate = new Date(now.getFullYear(), i + 1, 0).toISOString().split('T')[0];
+            return { startDate, endDate, period: monthNames[i] };
+        }
+    }
+    
+    // Todo o histórico / sempre / tudo
+    if (queryLower.match(/(?:todo|tudo|sempre|histórico|historico|total|desde o início|desde o inicio)/i)) {
+        const startDate = new Date(now.getFullYear() - 5, 0, 1).toISOString().split('T')[0]; // 5 anos atrás
+        const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+        return { startDate, endDate, period: 'histórico completo' };
+    }
+    
+    // Default: mês atual
+    const startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+    const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+    return { startDate, endDate, period: 'mês atual' };
+}
+
 async function generateQueryResponse(userId: string, topics: string[], chatId?: number, userQuery?: string): Promise<string> {
     // Busca dados no Supabase baseado nos tópicos
     const now = new Date();
     
-    // Ajuste para competência: USAR NOVA COLUNA DATE
-    // Se for resumo mensal, buscar intervalo do mes atual
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+    // 🔥 DETECTAR PERÍODO TEMPORAL NA PERGUNTA
+    const timePeriod = detectTimePeriod(userQuery || '');
+    const firstDay = timePeriod.startDate;
+    const lastDay = timePeriod.endDate;
+    
+    console.log(`[Telegram Query] Período detectado: ${timePeriod.period} (${firstDay} a ${lastDay})`);
     
     let contextData = "";
 
@@ -258,8 +322,7 @@ async function generateQueryResponse(userId: string, topics: string[], chatId?: 
         if (transactions && transactions.length > 0) {
             const despesas = transactions.filter(t => t.type === 'despesa').reduce((acc, curr) => acc + Number(curr.amount), 0);
             const receitas = transactions.filter(t => t.type === 'receita').reduce((acc, curr) => acc + Number(curr.amount), 0);
-            const refMonth = months[now.getMonth()];
-            contextData += `Resumo (${refMonth}): Receitas R$ ${receitas.toFixed(2)}, Despesas R$ ${despesas.toFixed(2)}. Saldo do mês: R$ ${(receitas - despesas).toFixed(2)}. Total de transações: ${transactions.length}. `;
+            contextData += `Resumo (${timePeriod.period}): Receitas R$ ${receitas.toFixed(2)}, Despesas R$ ${despesas.toFixed(2)}. Saldo: R$ ${(receitas - despesas).toFixed(2)}. Total de transações: ${transactions.length}. `;
         }
     }
     
@@ -299,7 +362,7 @@ async function generateQueryResponse(userId: string, topics: string[], chatId?: 
     
     // Se não encontrou dados, retornar mensagem mais útil
     if (!contextData || contextData.trim() === "") {
-        return "Ainda não há transações registradas no mês atual. Registre suas transações (exemplo: 'Almoço 50 reais') para começar a receber análises financeiras.";
+        return `Não encontrei transações para o período: ${timePeriod.period}. Registre suas transações (exemplo: 'Almoço 50 reais') para começar a receber análises financeiras.`;
     }
 
     // Gerar resposta final com LLM
@@ -307,6 +370,7 @@ async function generateQueryResponse(userId: string, topics: string[], chatId?: 
         Você é Spendly, assistente financeiro profissional do Telegram.
         
         Pergunta do usuário: "${userQuery || 'resumo financeiro'}"
+        Período analisado: ${timePeriod.period}
         
         Dados financeiros disponíveis: ${contextData}${historyContext}
         
@@ -314,6 +378,7 @@ async function generateQueryResponse(userId: string, topics: string[], chatId?: 
         - Responda DIRETAMENTE à pergunta do usuário
         - Use 2-3 linhas, seja objetivo e claro
         - Cite valores específicos (ex: R$ 1.234,50)
+        - SEMPRE mencione o período (ex: "Nos últimos 12 meses..." ou "Este mês...")
         - Use no máximo 1 emoji, apenas se essencial
         - Se perguntou quanto gastou, liste os valores das maiores categorias
         - Foque em informações acionáveis
@@ -362,7 +427,11 @@ export default async function handler(request: VercelRequest, response: VercelRe
     }
 
     // Buscar usuário vinculado
-    const { data: linkData } = await supabase.from('telegram_links').select('*').eq('chat_id', chatId).single();
+    const { data: linkData } = await supabase
+      .from('telegram_links')
+      .select('user_id, chat_id, default_budget_id')
+      .eq('chat_id', chatId)
+      .single();
     
     if (!linkData) {
         await sendTelegramMessage(chatId, "⚠️ Sua conta não está vinculada. Acesse o app Lumina > Minha Conta > Telegram para obter o link.");
