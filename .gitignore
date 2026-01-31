@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Documentation - Keep only main README
+OPTIMIZATION_REPORT.md
+OPTIMIZATION_GUIDE.md
+EXECUTIVE_SUMMARY.md
+TESTING_GUIDE.md
+CHECKLIST.md
+README_NEW.md

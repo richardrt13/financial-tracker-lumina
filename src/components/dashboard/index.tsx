@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/components/ui/use-toast";
 import { Loader2, Eye, EyeOff } from "lucide-react";
@@ -25,7 +25,7 @@ interface DashboardProps {
 export function Dashboard({ budgetId }: DashboardProps) {
   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
   const [selectedMonth, setSelectedMonth] = useState(() => {
-    const currentMonthIndex = new Date().getMonth(); // 0 (Jan) a 11 (Dez)
+    const currentMonthIndex = new Date().getMonth();
     const months = [
       "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
       "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
@@ -38,16 +38,15 @@ export function Dashboard({ budgetId }: DashboardProps) {
   const [isDueSoonDialogOpen, setIsDueSoonDialogOpen] = useState(false);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [valuesVisible, setValuesVisible] = useState(true); // Estado para controlar a visibilidade
+  const [valuesVisible, setValuesVisible] = useState(true);
 
   useEffect(() => {
     const fetchUser = async () => {
       const { data } = await supabase.auth.getUser();
-      setUserId(data.user?.id || null);
+      setUserId(data.user?.id ?? null);
     };
     fetchUser();
   }, []);
-
 
   const {
     isLoading,
@@ -72,41 +71,40 @@ export function Dashboard({ budgetId }: DashboardProps) {
     availableIncomesForEdit,
   } = useTransactionActions(userId, budgetId, fetchData);
 
-
-  const handleCardClick = (type: string) => {
+  const handleCardClick = useCallback((type: string) => {
     if (type !== 'saldo') {
       setSelectedType(type);
       setIsDialogOpen(true);
     }
-  };
+  }, []);
 
-  const saveEditTransaction = async () => {
+  const saveEditTransaction = useCallback(async () => {
     const success = await handleEditTransaction();
     if (success) {
       setIsEditDialogOpen(false);
     }
-  };
+  }, [handleEditTransaction]);
 
-  const deleteTransaction = async () => {
+  const deleteTransaction = useCallback(async () => {
     const success = await handleDeleteTransaction();
     if (success) {
       setIsDeleteDialogOpen(false);
     }
-  };
+  }, [handleDeleteTransaction]);
 
-  const handleEditDialogTransition = (transaction: Transaction) => {
+  const handleEditDialogTransition = useCallback((transaction: Transaction) => {
     handleEditClick(transaction);
     setIsEditDialogOpen(true);
-  };
+  }, [handleEditClick]);
 
-  const handleDeleteDialogTransition = (transaction: Transaction) => {
+  const handleDeleteDialogTransition = useCallback((transaction: Transaction) => {
     handleDeleteClick(transaction);
     setIsDeleteDialogOpen(true);
-  };
+  }, [handleDeleteClick]);
 
-  const checkSupabaseConnection = async () => {
+  const checkSupabaseConnection = useCallback(async () => {
     try {
-      const { data, error } = await supabase.from('transactions').select('count').limit(1);
+      const { error } = await supabase.from('transactions').select('count').limit(1);
       if (error) {
         console.error('Erro de conexão com Supabase:', error);
         return false;
@@ -116,7 +114,7 @@ export function Dashboard({ budgetId }: DashboardProps) {
       console.error('Falha ao verificar conexão com Supabase:', err);
       return false;
     }
-  };
+  }, []);
 
   useEffect(() => {
     checkSupabaseConnection()
@@ -129,7 +127,12 @@ export function Dashboard({ budgetId }: DashboardProps) {
           });
         }
       });
-  }, []);
+  }, [checkSupabaseConnection]);
+
+  // Memoize the selected type transactions to avoid unnecessary recalculations
+  const selectedTypeTransactions = useMemo(() => {
+    return selectedType ? transactionsData[selectedType] : [];
+  }, [selectedType, transactionsData]);
 
   return (
     <div className="space-y-4">
@@ -142,20 +145,19 @@ export function Dashboard({ budgetId }: DashboardProps) {
         />
 
         <div className="flex items-center gap-2">
-            <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setValuesVisible(!valuesVisible)}
-            >
-                {valuesVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </Button>
-            <DueSoonAlert
-              dueSoonData={dueSoonData}
-              onShowDetails={() => setIsDueSoonDialogOpen(true)}
-            />
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setValuesVisible(!valuesVisible)}
+          >
+            {valuesVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </Button>
+          <DueSoonAlert
+            dueSoonData={dueSoonData}
+            onShowDetails={() => setIsDueSoonDialogOpen(true)}
+          />
         </div>
       </div>
-
 
       {isLoading && !isProcessing ? (
         <div className="flex justify-center items-center h-64">
@@ -174,7 +176,7 @@ export function Dashboard({ budgetId }: DashboardProps) {
         isOpen={isDialogOpen}
         onOpenChange={setIsDialogOpen}
         selectedType={selectedType}
-        transactions={selectedType ? transactionsData[selectedType] : []}
+        transactions={selectedTypeTransactions}
         selectedMonth={selectedMonth}
         selectedYear={selectedYear}
         onEditClick={handleEditDialogTransition}

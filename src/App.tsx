@@ -3,9 +3,9 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, memo, ReactNode } from "react";
 import { supabase } from "./lib/supabase";
-import { User } from "@supabase/supabase-js";
+import { User, Session } from "@supabase/supabase-js";
 import { AuthProvider } from "./contexts/AuthContext";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
@@ -13,30 +13,47 @@ import NotFound from "./pages/NotFound";
 import MinhaConta from "./pages/MinhaConta";
 import Configuracoes from "./pages/Configuracoes";
 
-const queryClient = new QueryClient();
+// Configure QueryClient with better defaults
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      gcTime: 1000 * 60 * 10, // 10 minutes (formerly cacheTime)
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
 
-function PrivateRoute({ children }: { children: React.ReactNode }) {
+interface PrivateRouteProps {
+  children: ReactNode;
+}
+
+function PrivateRoute({ children }: PrivateRouteProps) {
   const [session, setSession] = useState<boolean | null>(null);
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // Check initial session
+    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
       setSession(!!session);
-      setUser(session?.user || null);
+      setUser(session?.user ?? null);
     });
 
+    // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((_event: string, session: Session | null) => {
       setSession(!!session);
-      setUser(session?.user || null);
+      setUser(session?.user ?? null);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
+  // Loading state
   if (session === null) {
-    return null; // ou um componente de loading
+    return null;
   }
 
   return session ? (
@@ -44,9 +61,12 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
       {children}
     </AuthProvider>
   ) : (
-    <Navigate to="/login" />
+    <Navigate to="/login" replace />
   );
 }
+
+// Memoize PrivateRoute to avoid unnecessary re-renders
+const MemoizedPrivateRoute = memo(PrivateRoute);
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -58,25 +78,25 @@ const App = () => (
           <Route
             path="/"
             element={
-              <PrivateRoute>
+              <MemoizedPrivateRoute>
                 <Index />
-              </PrivateRoute>
+              </MemoizedPrivateRoute>
             }
           />
           <Route
             path="/minha-conta"
             element={
-              <PrivateRoute>
+              <MemoizedPrivateRoute>
                 <MinhaConta />
-              </PrivateRoute>
+              </MemoizedPrivateRoute>
             }
           />
           <Route
             path="/configuracoes"
             element={
-              <PrivateRoute>
+              <MemoizedPrivateRoute>
                 <Configuracoes />
-              </PrivateRoute>
+              </MemoizedPrivateRoute>
             }
           />
           <Route path="/login" element={<Login />} />
