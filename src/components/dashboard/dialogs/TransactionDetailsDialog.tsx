@@ -6,14 +6,16 @@ import {
 } from "@/components/ui/dialog";
 import { TransactionList } from '../ui/TransactionList';
 import { Transaction } from '../types';
+import { DateRange } from "react-day-picker";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 interface TransactionDetailsDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   selectedType: string | null;
   transactions: Transaction[];
-  selectedMonth: string;
-  selectedYear: string;
+  dateRange?: DateRange; // Replace selectedMonth/Year
   onEditClick: (transaction: Transaction) => void;
   onDeleteClick: (transaction: Transaction) => void;
   onToggleStatus: (transaction: Transaction) => void;
@@ -32,8 +34,7 @@ export function TransactionDetailsDialog({
   onOpenChange,
   selectedType,
   transactions,
-  selectedMonth,
-  selectedYear,
+  dateRange, // Use dateRange
   onEditClick,
   onDeleteClick,
   onToggleStatus,
@@ -42,12 +43,21 @@ export function TransactionDetailsDialog({
 }: TransactionDetailsDialogProps) {
 
   const title = selectedType ? typeToTitle[selectedType] : '';
+  
+  let dateText = "";
+  if (dateRange?.from) {
+    if (dateRange.to) {
+        dateText = `${format(dateRange.from, 'dd/MM/yyyy')} - ${format(dateRange.to, 'dd/MM/yyyy')}`;
+    } else {
+        dateText = format(dateRange.from, 'dd/MM/yyyy', { locale: ptBR });
+    }
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>{title} de {selectedMonth} de {selectedYear}</DialogTitle>
+          <DialogTitle>{title} - {dateText}</DialogTitle>
         </DialogHeader>
         <div className="flex-grow overflow-y-auto pr-3">
           {transactions.length > 0 ? (
