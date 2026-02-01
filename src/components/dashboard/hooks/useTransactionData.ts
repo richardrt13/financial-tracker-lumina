@@ -44,7 +44,6 @@ export const useTransactionData = (userId: string | null, budgetId: string | nul
       const { data, error } = await supabase
         .from('transactions')
         .select('*')
-        .eq('user_id', userId)
         .eq('budget_id', budgetId)
         .order('year', { ascending: false })
         .order('month', { ascending: false });
@@ -81,7 +80,6 @@ export const useTransactionData = (userId: string | null, budgetId: string | nul
       let query = supabase
         .from('transactions')
         .select('*')
-        .eq('user_id', userId)
         .eq('budget_id', budgetId)
         .gte('date', format(dateRange.from, 'yyyy-MM-dd')); // Filter by date range start
 
