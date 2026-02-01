@@ -27,7 +27,6 @@ export const useTransactionActions = (userId: string | null, budgetId: string, f
           const { data, error } = await supabase
             .from('transactions')
             .select('id, description, category, amount')
-            .eq('user_id', userId)
             .eq('budget_id', budgetId)
             .eq('type', 'receita')
             .eq('month', selectedTransaction.month)
@@ -77,7 +76,7 @@ export const useTransactionActions = (userId: string | null, budgetId: string, f
     try {
       const newStatus = !transaction.is_completed;
       const updateData: any = { is_completed: newStatus, completed_at: newStatus ? new Date().toISOString() : null };
-      const { error } = await supabase.from('transactions').update(updateData).eq('id', transaction.id).eq('user_id', userId).eq('budget_id', budgetId);
+      const { error } = await supabase.from('transactions').update(updateData).eq('id', transaction.id).eq('budget_id', budgetId);
       if (error) throw error;
       toast({ title: "Sucesso", description: `Transação marcada como ${newStatus ? 'concluída' : 'pendente'}!` });
       supabase.functions.invoke('process-queue').catch(console.error);
@@ -124,7 +123,6 @@ export const useTransactionActions = (userId: string | null, budgetId: string, f
         .from('transactions')
         .update(updatePayload)
         .eq('id', selectedTransaction.id)
-        .eq('user_id', userId)
         .eq('budget_id', budgetId);
 
       if (error) throw error;
@@ -144,7 +142,7 @@ export const useTransactionActions = (userId: string | null, budgetId: string, f
     if (!selectedTransaction || !userId) return false;
     setIsProcessing(true);
     try {
-      const { error } = await supabase.from('transactions').delete().eq('id', selectedTransaction.id).eq('user_id', userId).eq('budget_id', budgetId);
+      const { error } = await supabase.from('transactions').delete().eq('id', selectedTransaction.id).eq('budget_id', budgetId);
       if (error) throw error;
       toast({ title: "Sucesso", description: "Transação excluída!" });
       await fetchData(); // Atualiza os dados na Dashboard
