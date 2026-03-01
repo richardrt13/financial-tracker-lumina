@@ -297,5 +297,5 @@ export const useTransactionData = (userId: string | null, budgetId: string | nul
   }, [userId, budgetId, fetchData, fetchAllHistoricalData]); // Dependencies that define the subscription's context
 
 
-  return { isLoading, summaryData, completionData, transactionsData, dueSoonData, allTransactionsHistory, fetchData };
+  return { isLoading, summaryData, completionData, transactionsData, dueSoonData, allTransactionsHistory, fetchData, fetchAllHistoricalData };
 };

@@ -106,8 +106,8 @@ export function TransactionList({
           key={transaction.id}
           className={`p-3 mb-2 rounded-md border ${transaction.is_completed
             ? 'border-green-200 bg-green-50/70'
-            : highlightDueDate && transaction.due_day && getVencimentoStatus(transaction.due_day) !== 'normal'
-              ? (getVencimentoStatus(transaction.due_day) === 'atrasado' ? 'border-red-300 bg-red-50/70' : 'border-amber-300 bg-amber-50/70')
+            : highlightDueDate && transaction.due_day && getVencimentoStatus(transaction) !== 'normal'
+              ? (getVencimentoStatus(transaction) === 'atrasado' ? 'border-red-300 bg-red-50/70' : 'border-amber-300 bg-amber-50/70')
               : 'border-gray-200 bg-white'} hover:shadow-sm transition-shadow`}
         >
           <div className="flex justify-between items-start">
@@ -133,15 +133,15 @@ export function TransactionList({
                   <div className="flex items-center">
                     <Calendar className="h-3 w-3 mr-1" />
                     Vencimento: dia {transaction.due_day}
-                    {!transaction.is_completed && getVencimentoStatus(transaction.due_day) === "atrasado" && (
+                    {!transaction.is_completed && getVencimentoStatus(transaction) === "atrasado" && (
                       <Badge variant="destructive" className="ml-2 px-1.5 py-0 text-[10px]">Atrasado</Badge>
                     )}
-                    {!transaction.is_completed && getVencimentoStatus(transaction.due_day) === "hoje" && (
+                    {!transaction.is_completed && getVencimentoStatus(transaction) === "hoje" && (
                       <Badge variant="default" className="bg-amber-500 hover:bg-amber-600 ml-2 px-1.5 py-0 text-[10px]">Vence hoje</Badge>
                     )}
-                    {!transaction.is_completed && getVencimentoStatus(transaction.due_day) === "proximo" && (
+                    {!transaction.is_completed && getVencimentoStatus(transaction) === "proximo" && (
                       <Badge variant="outline" className="text-amber-700 border-amber-400 bg-amber-100 ml-2 px-1.5 py-0 text-[10px]">
-                        Vence em {getDaysToVencimento(transaction.due_day)} dias
+                        Vence em {getDaysToVencimento(transaction)} dias
                       </Badge>
                     )}
                   </div>
