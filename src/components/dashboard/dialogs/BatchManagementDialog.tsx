@@ -240,6 +240,8 @@ export function BatchManagementDialog({
     if (ids.length === 0) return;
 
     setIsProcessing(true);
+    // Close the AlertDialog first to avoid Radix overlay conflicts with the parent Dialog
+    setIsDeleteAlertOpen(false);
     try {
       const { error } = await supabase
         .from('transactions')
@@ -256,7 +258,6 @@ export function BatchManagementDialog({
       toast({ title: "Erro", description: err.message || "Falha ao excluir transações.", variant: "destructive" });
     } finally {
       setIsProcessing(false);
-      setIsDeleteAlertOpen(false);
     }
   }, [selectedIds, filteredIds, budgetId, onDataChanged]);
 
@@ -265,6 +266,7 @@ export function BatchManagementDialog({
     if (ids.length === 0) return;
 
     setIsProcessing(true);
+    setIsBulkEditOpen(false);
     try {
       const { error } = await supabase
         .from('transactions')
@@ -276,7 +278,6 @@ export function BatchManagementDialog({
 
       toast({ title: "Sucesso", description: `${ids.length} transaç${ids.length === 1 ? 'ão atualizada' : 'ões atualizadas'}.` });
       setSelectedIds(new Set());
-      setIsBulkEditOpen(false);
       await onDataChanged();
     } catch (err: any) {
       toast({ title: "Erro", description: err.message || "Falha ao atualizar transações.", variant: "destructive" });
@@ -333,7 +334,15 @@ export function BatchManagementDialog({
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-5xl max-h-[90vh] flex flex-col p-0">
+        <DialogContent
+          className="sm:max-w-5xl max-h-[90vh] flex flex-col p-0"
+          onPointerDownOutside={(e) => {
+            if (isDeleteAlertOpen || isBulkEditOpen) e.preventDefault();
+          }}
+          onInteractOutside={(e) => {
+            if (isDeleteAlertOpen || isBulkEditOpen) e.preventDefault();
+          }}
+        >
           <DialogHeader className="px-6 pt-6 pb-0">
             <DialogTitle>Gestão em Lote de Transações</DialogTitle>
           </DialogHeader>
