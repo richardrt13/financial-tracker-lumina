@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { toast } from "@/components/ui/use-toast";
-import { Loader2 } from "lucide-react";
+import { Loader2, ListChecks } from "lucide-react";
 import { FinancialAssistantChatV2 } from '@/components/FinancialAssistantChatV2';
 import { supabase } from '@/lib/supabase';
 import { Button } from "@/components/ui/button"; 
@@ -13,6 +13,7 @@ import { TransactionDetailsDialog } from './dialogs/TransactionDetailsDialog';
 import { EditTransactionDialog } from './dialogs/EditTransactionDialog';
 import { DeleteTransactionDialog } from './dialogs/DeleteTransactionDialog';
 import { DueSoonDialog } from './dialogs/DueSoonDialog';
+import { BatchManagementDialog } from './dialogs/BatchManagementDialog';
 
 import { useTransactionData } from './hooks/useTransactionData';
 import { useTransactionActions } from './hooks/useTransactionActions';
@@ -31,6 +32,7 @@ export function Dashboard({ budgetId }: DashboardProps) {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDueSoonDialogOpen, setIsDueSoonDialogOpen] = useState(false);
+  const [isBatchDialogOpen, setIsBatchDialogOpen] = useState(false);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [valuesVisible] = useState(true);
@@ -49,7 +51,9 @@ export function Dashboard({ budgetId }: DashboardProps) {
     completionData,
     transactionsData,
     dueSoonData,
-    fetchData
+    allTransactionsHistory,
+    fetchData,
+    fetchAllHistoricalData,
   } = useTransactionData(userId, budgetId, dateRange);
 
   const {
@@ -64,6 +68,10 @@ export function Dashboard({ budgetId }: DashboardProps) {
     handleDeleteTransaction,
     availableIncomesForEdit,
   } = useTransactionActions(userId, budgetId, fetchData);
+
+  const handleBatchDataChanged = useCallback(async () => {
+    await Promise.all([fetchData(), fetchAllHistoricalData()]);
+  }, [fetchData, fetchAllHistoricalData]);
 
   const handleCardClick = useCallback((type: string) => {
     if (type !== 'saldo') {
@@ -137,7 +145,16 @@ export function Dashboard({ budgetId }: DashboardProps) {
              Visão geral das suas finanças
           </p>
         </div>
-        <div className="w-full sm:w-auto mt-4 sm:mt-0"> 
+        <div className="flex items-center gap-2 w-full sm:w-auto mt-4 sm:mt-0">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setIsBatchDialogOpen(true)}
+            >
+              <ListChecks className="h-4 w-4" />
+              <span className="hidden sm:inline">Gestão em Lote</span>
+            </Button>
             <FilterControls 
             dateRange={dateRange}
             setDateRange={setDateRange}
@@ -197,6 +214,14 @@ export function Dashboard({ budgetId }: DashboardProps) {
         onDeleteClick={handleDeleteDialogTransition}
         onToggleStatus={toggleTransactionStatus}
         isProcessing={isProcessing}
+      />
+
+      <BatchManagementDialog
+        isOpen={isBatchDialogOpen}
+        onOpenChange={setIsBatchDialogOpen}
+        transactions={allTransactionsHistory}
+        budgetId={budgetId}
+        onDataChanged={handleBatchDataChanged}
       />
 
       {/* Assistente Financeiro Inteligente V2 */}

@@ -1,20 +1,34 @@
 // helpers.ts
 import { Transaction } from '../types';
 
-export function getDaysToVencimento(dueDay: number | undefined) {
-  if (!dueDay) return null;
+const MONTH_NAMES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
-  const today = new Date();
-  const currentDay = today.getDate();
-
-  return dueDay - currentDay;
+/** Retorna a data de vencimento (início do dia) com base em month, year e due_day da transação. */
+export function getDueDate(transaction: Pick<Transaction, 'due_day' | 'month' | 'year'>): Date | null {
+  if (transaction.due_day == null || !transaction.month || !transaction.year) return null;
+  const monthIndex = MONTH_NAMES.indexOf(transaction.month);
+  if (monthIndex === -1) return null;
+  const year = parseInt(transaction.year, 10);
+  if (isNaN(year)) return null;
+  const due = new Date(year, monthIndex, transaction.due_day);
+  if (due.getDate() !== transaction.due_day) return null;
+  return due;
 }
 
-export const getVencimentoStatus = (dueDay: number | undefined) => {
-  if (!dueDay) return null;
-  
-  const daysLeft = getDaysToVencimento(dueDay);
-  
+/** Dias até o vencimento (negativo = atrasado). Usa a data completa (dia + mês + ano). */
+export function getDaysToVencimento(transaction: Pick<Transaction, 'due_day' | 'month' | 'year'>): number | null {
+  const due = getDueDate(transaction);
+  if (!due) return null;
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const dueStart = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+  const diffMs = dueStart.getTime() - todayStart.getTime();
+  return Math.round(diffMs / (1000 * 60 * 60 * 24));
+}
+
+export const getVencimentoStatus = (transaction: Pick<Transaction, 'due_day' | 'month' | 'year'>) => {
+  if (!transaction.due_day) return null;
+  const daysLeft = getDaysToVencimento(transaction);
   if (daysLeft === null) return null;
   if (daysLeft < 0) return "atrasado";
   if (daysLeft === 0) return "hoje";
