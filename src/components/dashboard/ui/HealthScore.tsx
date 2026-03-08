@@ -49,13 +49,15 @@ function calculateHealthScore(
   const pillars: PillarItem[] = [];
 
   // --- Equilíbrio (35%) ---
-  const savingsRate = receita > 0
-    ? ((receita - despesa - investimento) / receita) * 100
+  // Mede receita vs despesa apenas. Investimentos são premiados no pilar próprio,
+  // não devem penalizar o equilíbrio — investir o que sobra é o comportamento ideal.
+  const marginRate = receita > 0
+    ? ((receita - despesa) / receita) * 100
     : 0;
-  const targetSavingsRate = 20;
-  const equilibrioPct = Math.round(Math.min(100, Math.max(0, (savingsRate / targetSavingsRate) * 100)));
-  const savingsGap = receita > 0 && savingsRate < targetSavingsRate
-    ? (targetSavingsRate - savingsRate) / 100 * receita
+  const targetMarginRate = 20;
+  const equilibrioPct = Math.round(Math.min(100, Math.max(0, (marginRate / targetMarginRate) * 100)));
+  const marginGap = receita > 0 && marginRate < targetMarginRate
+    ? (targetMarginRate - marginRate) / 100 * receita
     : 0;
 
   pillars.push({
@@ -65,12 +67,12 @@ function calculateHealthScore(
     percentage: equilibrioPct,
     weight: 35,
     color: pillarColor(equilibrioPct),
-    tooltip: 'Mede quanto da sua renda você consegue guardar após despesas e investimentos.',
+    tooltip: 'Mede se você gasta menos do que ganha. Investimentos não são contados como gasto.',
     detail: receita > 0
-      ? `${savingsRate.toFixed(1)}% da renda sobra · Meta: ≥ ${targetSavingsRate}%`
+      ? `${marginRate.toFixed(1)}% da renda disponível (receita − despesas) · Meta: ≥ ${targetMarginRate}%`
       : 'Sem receitas registradas neste período',
-    tip: savingsGap > 0
-      ? `Reduza R$ ${formatCurrency(savingsGap)} em despesas para atingir a meta`
+    tip: marginGap > 0
+      ? `Reduza R$ ${formatCurrency(marginGap)} em despesas para atingir a meta`
       : null,
   });
 
