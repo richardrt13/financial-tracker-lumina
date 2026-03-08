@@ -35,6 +35,7 @@ import { Switch } from "@/components/ui/switch";
 import { DatePicker } from "@/components/ui/date-picker"; // Import DatePicker
 import { VoiceCommandTransaction } from './VoiceCommandTransaction';
 import type { Transaction as TransactionType } from './dashboard/types';
+import { useSmartSuggestions } from '@/hooks/useSmartSuggestions';
 
 // Re-add months array for helper purposes
 const months = [
@@ -89,6 +90,9 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
   const [formattedAmount, setFormattedAmount] = useState<string>("0,00");
 
   const [availableIncomes, setAvailableIncomes] = useState<TransactionType[]>([]);
+  const [descriptionSuggestions, setDescriptionSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const { suggestCategory, suggestDescriptions, suggestAmount } = useSmartSuggestions(userId, budgetId);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -502,16 +506,69 @@ export function TransactionForm({ budgetId }: TransactionFormProps) {
               <Button type="button" variant="outline" size="icon" onClick={() => setIsNewCategoryDialogOpen(true)}><Plus className="h-4 w-4" /></Button>
             </div>
             
-            {/* ...existing code... Description Field */}
+            {/* Description Field with Smart Suggestions */}
             <FormField
                 control={form.control}
                 name="description"
                 render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="relative">
                         <FormLabel>Descrição (Opcional)</FormLabel>
                         <FormControl>
-                            <Input placeholder="Ex: Compra semanal, Salário mensal" {...field} value={field.value ?? ""} />
+                            <Input 
+                              placeholder="Ex: Compra semanal, Salário mensal" 
+                              {...field} 
+                              value={field.value ?? ""} 
+                              onChange={(e) => {
+                                field.onChange(e);
+                                const val = e.target.value;
+                                const suggestions = suggestDescriptions(val);
+                                setDescriptionSuggestions(suggestions);
+                                setShowSuggestions(suggestions.length > 0);
+                                
+                                const suggestedCat = suggestCategory(val);
+                                if (suggestedCat && !form.getValues('category')) {
+                                  form.setValue('category', suggestedCat);
+                                }
+                              }}
+                              onFocus={() => {
+                                if (descriptionSuggestions.length > 0) setShowSuggestions(true);
+                              }}
+                              onBlur={() => {
+                                setTimeout(() => setShowSuggestions(false), 200);
+                              }}
+                              autoComplete="off"
+                            />
                         </FormControl>
+                        {showSuggestions && descriptionSuggestions.length > 0 && (
+                          <div className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-lg py-1">
+                            {descriptionSuggestions.map((suggestion, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent transition-colors"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  form.setValue('description', suggestion);
+                                  setShowSuggestions(false);
+                                  
+                                  const suggestedCat = suggestCategory(suggestion);
+                                  if (suggestedCat) form.setValue('category', suggestedCat);
+                                  
+                                  const suggestedAmt = suggestAmount(suggestion);
+                                  if (suggestedAmt && form.getValues('amount') === 0) {
+                                    form.setValue('amount', suggestedAmt);
+                                    setFormattedAmount(suggestedAmt.toLocaleString('pt-BR', {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2,
+                                    }));
+                                  }
+                                }}
+                              >
+                                {suggestion}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                         <FormMessage />
                     </FormItem>
                 )}

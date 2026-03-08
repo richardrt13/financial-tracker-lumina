@@ -125,7 +125,7 @@ export default function ResetPassword() {
 
   if (checkingSession) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/10 to-muted">
         <Card className="w-full max-w-md">
           <CardContent className="flex flex-col items-center justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
@@ -141,7 +141,7 @@ export default function ResetPassword() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/10 to-muted p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-center mb-4">
@@ -162,7 +162,7 @@ export default function ResetPassword() {
             <div className="space-y-2">
               <Label htmlFor="password">Nova Senha</Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+                <Lock className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground" />
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
@@ -178,12 +178,12 @@ export default function ResetPassword() {
                   className="absolute right-3 top-2.5"
                 >
                   {showPassword ? 
-                    <EyeOff className="h-5 w-5 text-gray-400" /> : 
-                    <Eye className="h-5 w-5 text-gray-400" />
+                    <EyeOff className="h-5 w-5 text-muted-foreground" /> : 
+                    <Eye className="h-5 w-5 text-muted-foreground" />
                   }
                 </button>
               </div>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 A senha deve ter pelo menos 8 caracteres
               </p>
             </div>
@@ -191,7 +191,7 @@ export default function ResetPassword() {
             <div className="space-y-2">
               <Label htmlFor="confirm-password">Confirmar Nova Senha</Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+                <Lock className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground" />
                 <Input
                   id="confirm-password"
                   type={showPassword ? "text" : "password"}
@@ -207,8 +207,8 @@ export default function ResetPassword() {
                   className="absolute right-3 top-2.5"
                 >
                   {showPassword ? 
-                    <EyeOff className="h-5 w-5 text-gray-400" /> : 
-                    <Eye className="h-5 w-5 text-gray-400" />
+                    <EyeOff className="h-5 w-5 text-muted-foreground" /> : 
+                    <Eye className="h-5 w-5 text-muted-foreground" />
                   }
                 </button>
               </div>

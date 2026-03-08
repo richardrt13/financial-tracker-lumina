@@ -79,24 +79,24 @@ export function TransactionList({
   };
 
   const renderSortIcon = (field: SortField) => {
-    if (sortField !== field) return <ArrowUpDown className="ml-1 h-3 w-3 text-gray-400" />;
-    return sortDirection === 'asc' ? <ArrowUp className="ml-1 h-3 w-3 text-blue-500" /> : <ArrowDown className="ml-1 h-3 w-3 text-blue-500" />;
+    if (sortField !== field) return <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground" />;
+    return sortDirection === 'asc' ? <ArrowUp className="ml-1 h-3 w-3 text-primary" /> : <ArrowDown className="ml-1 h-3 w-3 text-primary" />;
   };
 
 
   return (
     <TooltipProvider>
-      <div className="bg-gray-50 p-2 mb-2 rounded-md border border-gray-200 flex justify-start items-center space-x-3 text-xs sticky top-0 z-10">
-        <button onClick={() => toggleSort('created_at')} className="flex items-center font-medium text-gray-600 hover:text-blue-600">
+      <div className="bg-muted/50 p-2 mb-2 rounded-lg border flex justify-start items-center space-x-3 text-xs sticky top-0 z-10">
+        <button onClick={() => toggleSort('created_at')} className="flex items-center font-medium text-muted-foreground hover:text-primary transition-colors">
           Data {renderSortIcon('created_at')}
         </button>
-        <button onClick={() => toggleSort('description')} className="flex items-center font-medium text-gray-600 hover:text-blue-600">
+        <button onClick={() => toggleSort('description')} className="flex items-center font-medium text-muted-foreground hover:text-primary transition-colors">
           Nome {renderSortIcon('description')}
         </button>
-         <button onClick={() => toggleSort('due_day')} className="flex items-center font-medium text-gray-600 hover:text-blue-600">
+         <button onClick={() => toggleSort('due_day')} className="flex items-center font-medium text-muted-foreground hover:text-primary transition-colors">
           Venc. {renderSortIcon('due_day')}
         </button>
-        <button onClick={() => toggleSort('amount')} className="flex items-center font-medium text-gray-600 hover:text-blue-600">
+        <button onClick={() => toggleSort('amount')} className="flex items-center font-medium text-muted-foreground hover:text-primary transition-colors">
           Valor {renderSortIcon('amount')}
         </button>
       </div>
@@ -108,7 +108,7 @@ export function TransactionList({
             ? 'border-green-200 bg-green-50/70'
             : highlightDueDate && transaction.due_day && getVencimentoStatus(transaction) !== 'normal'
               ? (getVencimentoStatus(transaction) === 'atrasado' ? 'border-red-300 bg-red-50/70' : 'border-amber-300 bg-amber-50/70')
-              : 'border-gray-200 bg-white'} hover:shadow-sm transition-shadow`}
+              : 'border-border bg-card'} hover:shadow-sm transition-shadow`}
         >
           <div className="flex justify-between items-start">
             <div className="flex-1 min-w-0">
@@ -121,14 +121,14 @@ export function TransactionList({
                   className="mt-0.5"
                 />
                 <div>
-                  <h3 className={`font-medium text-sm ${transaction.is_completed ? 'line-through text-gray-500' : 'text-gray-800'}`}>
+                  <h3 className={`font-medium text-sm ${transaction.is_completed ? 'line-through text-muted-foreground' : ''}`}>
                     {transaction.description || transaction.category}
                   </h3>
-                  <p className="text-xs text-gray-500">{transaction.category}</p>
+                  <p className="text-xs text-muted-foreground">{transaction.category}</p>
                 </div>
               </div>
 
-              <div className="text-xs text-gray-500 mt-1 space-y-0.5">
+              <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
                 {transaction.due_day && (
                   <div className="flex items-center">
                     <Calendar className="h-3 w-3 mr-1" />
@@ -165,15 +165,15 @@ export function TransactionList({
             </div>
 
             <div className="text-right ml-2 min-w-[100px]">
-              <p className={`font-semibold text-sm ${transaction.is_completed ? 'text-gray-500' :
-                transaction.type === 'receita' ? 'text-green-600' :
-                transaction.type === 'despesa' ? 'text-red-600' : 'text-blue-600'}`}>
+              <p className={`font-semibold text-sm ${transaction.is_completed ? 'text-muted-foreground' :
+                transaction.type === 'receita' ? 'text-emerald-600 dark:text-emerald-400' :
+                transaction.type === 'despesa' ? 'text-red-600 dark:text-red-400' : 'text-indigo-600 dark:text-indigo-400'}`}>
                 {valuesVisible ? `${transaction.type === 'despesa' || transaction.type === 'investimento' ? '-' : '+'} R$ ${formatCurrency(transaction.amount)}` : "R$ ••••"}
               </p>
               {transaction.type === 'receita' && transaction.remaining_after_links !== undefined && !transaction.is_completed && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div className="text-xs text-gray-500 mt-0.5 flex items-center justify-end cursor-default">
+                    <div className="text-xs text-muted-foreground mt-0.5 flex items-center justify-end cursor-default">
                       <Coins className="h-3 w-3 mr-1 text-yellow-500" />
                       <span>Sobra: {valuesVisible ? `R$ ${formatCurrency(transaction.remaining_after_links)}` : "R$ ••••"}</span>
                     </div>
@@ -184,7 +184,7 @@ export function TransactionList({
                 </Tooltip>
               )}
               {transaction.is_completed && transaction.completed_at && (
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Concluída: {formatDate(transaction.completed_at)}
                 </p>
               )}

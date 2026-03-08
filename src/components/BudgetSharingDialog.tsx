@@ -92,7 +92,7 @@ export const BudgetSharingDialog = ({ budget, userId }: BudgetSharingDialogProps
 
   const getPermissionBadge = (permission: 'view' | 'edit') => {
     return permission === 'edit' ? (
-      <Badge variant="default" className="bg-blue-500">
+      <Badge variant="default" className="bg-primary">
         <Shield className="w-3 h-3 mr-1" />
         Editar
       </Badge>
@@ -173,7 +173,7 @@ export const BudgetSharingDialog = ({ budget, userId }: BudgetSharingDialogProps
                   <div className="space-y-2">
                     <Label htmlFor="email">Email do usuário</Label>
                     <div className="flex gap-2">
-                      <Mail className="w-4 h-4 mt-3 text-gray-500" />
+                      <Mail className="w-4 h-4 mt-3 text-muted-foreground" />
                       <Input
                         id="email"
                         type="email"
@@ -206,7 +206,7 @@ export const BudgetSharingDialog = ({ budget, userId }: BudgetSharingDialogProps
                             <Shield className="w-4 h-4" />
                             <div>
                               <div className="font-medium">Visualizar</div>
-                              <div className="text-xs text-gray-500">
+                              <div className="text-xs text-muted-foreground">
                                 Pode apenas ver transações e relatórios
                               </div>
                             </div>
@@ -214,10 +214,10 @@ export const BudgetSharingDialog = ({ budget, userId }: BudgetSharingDialogProps
                         </SelectItem>
                         <SelectItem value="edit">
                           <div className="flex items-center gap-2">
-                            <Shield className="w-4 h-4 text-blue-500" />
+                            <Shield className="w-4 h-4 text-primary" />
                             <div>
                               <div className="font-medium">Editar</div>
-                              <div className="text-xs text-gray-500">
+                              <div className="text-xs text-muted-foreground">
                                 Pode adicionar, editar e excluir transações
                               </div>
                             </div>
@@ -227,8 +227,8 @@ export const BudgetSharingDialog = ({ budget, userId }: BudgetSharingDialogProps
                     </Select>
                   </div>
 
-                  <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
-                    <p className="text-sm text-blue-900 dark:text-blue-100">
+                  <div className="bg-primary/10 p-4 rounded-lg border">
+                    <p className="text-sm text-foreground">
                       <strong>💡 Dica de segurança:</strong> O usuário receberá um
                       convite que precisa ser aceito antes de ter acesso ao orçamento.
                       Você pode revogar o acesso a qualquer momento.
@@ -252,7 +252,7 @@ export const BudgetSharingDialog = ({ budget, userId }: BudgetSharingDialogProps
                 {currentBudgetShares.length === 0 ? (
                   <Card>
                     <CardContent className="pt-6">
-                      <div className="text-center py-8 text-gray-500">
+                      <div className="text-center py-8 text-muted-foreground">
                         <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
                         <p>Este orçamento ainda não foi compartilhado</p>
                         <p className="text-sm mt-2">
@@ -269,7 +269,7 @@ export const BudgetSharingDialog = ({ budget, userId }: BudgetSharingDialogProps
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-2">
-                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-semibold">
+                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-purple-500 flex items-center justify-center text-white font-semibold">
                                   {share.recipient_name
                                     ? share.recipient_name.charAt(0).toUpperCase()
                                     : share.recipient_email.charAt(0).toUpperCase()}
@@ -278,7 +278,7 @@ export const BudgetSharingDialog = ({ budget, userId }: BudgetSharingDialogProps
                                   <p className="font-medium">
                                     {share.recipient_name || 'Usuário'}
                                   </p>
-                                  <p className="text-sm text-gray-500">
+                                  <p className="text-sm text-muted-foreground">
                                     {share.recipient_email}
                                   </p>
                                 </div>
@@ -289,7 +289,7 @@ export const BudgetSharingDialog = ({ budget, userId }: BudgetSharingDialogProps
                                 {getPermissionBadge(share.permission)}
                               </div>
 
-                              <p className="text-xs text-gray-500 mt-2">
+                              <p className="text-xs text-muted-foreground mt-2">
                                 Compartilhado em{' '}
                                 {new Date(share.created_at).toLocaleDateString('pt-BR')}
                               </p>
@@ -387,18 +387,18 @@ export const PendingInvites = ({ userId }: PendingInvitesProps) => {
       </CardHeader>
       <CardContent className="space-y-3">
         {pendingInvites.map((invite) => (
-          <Card key={invite.share_id} className="bg-white dark:bg-gray-900">
+          <Card key={invite.share_id} className="bg-card">
             <CardContent className="pt-6">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <p className="font-medium text-lg mb-1">{invite.budget_name}</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                  <p className="text-sm text-muted-foreground mb-2">
                     Convidado por{' '}
                     <strong>{invite.owner_name || invite.owner_email}</strong>
                   </p>
                   <div className="flex items-center gap-2">
                     {invite.permission === 'edit' ? (
-                      <Badge variant="default" className="bg-blue-500">
+                      <Badge variant="default" className="bg-primary">
                         <Shield className="w-3 h-3 mr-1" />
                         Permissão de edição
                       </Badge>
@@ -468,7 +468,7 @@ export const SharedWithMeBudgets = ({ userId }: SharedWithMeBudgetsProps) => {
         {sharedWithMe.map((share) => (
           <div
             key={share.share_id}
-            className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
           >
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-semibold">
@@ -476,7 +476,7 @@ export const SharedWithMeBudgets = ({ userId }: SharedWithMeBudgetsProps) => {
               </div>
               <div>
                 <p className="font-medium">{share.budget_name}</p>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-muted-foreground">
                   Por {share.owner_name || share.owner_email}
                 </p>
               </div>
@@ -484,7 +484,7 @@ export const SharedWithMeBudgets = ({ userId }: SharedWithMeBudgetsProps) => {
 
             <div className="flex items-center gap-2">
               {share.permission === 'edit' ? (
-                <Badge variant="default" className="bg-blue-500">
+                <Badge variant="default" className="bg-primary">
                   <Shield className="w-3 h-3 mr-1" />
                   Editar
                 </Badge>

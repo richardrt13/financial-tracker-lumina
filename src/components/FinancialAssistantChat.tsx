@@ -144,8 +144,8 @@ export function FinancialAssistantChat({
                 className={`flex items-start gap-3 mb-4 ${message.role === 'assistant' ? '' : 'justify-end'}`}
               >
                 {message.role === 'assistant' && (
-                  <Avatar className="h-6 w-6 mr-2 bg-blue-100 flex-shrink-0">
-                    <Bot className="h-4 w-4 text-blue-600" />
+                  <Avatar className="h-6 w-6 mr-2 bg-primary/15 flex-shrink-0">
+                    <Bot className="h-4 w-4 text-primary" />
                   </Avatar>
                 )}
                 <div 
@@ -166,7 +166,7 @@ export function FinancialAssistantChat({
                   </div>
                 </div>
                 {message.role === 'user' && (
-                  <Avatar className="h-8 w-8 bg-gray-500 text-white flex-shrink-0">
+                  <Avatar className="h-8 w-8 bg-muted-foreground text-white flex-shrink-0">
                     {/* Pode ser substituído pela imagem de perfil do usuário */}
                     <MessageSquare className="h-5 w-5" />
                   </Avatar>
@@ -175,8 +175,8 @@ export function FinancialAssistantChat({
             ))}
             {isLoading && (
                <div className="flex items-start gap-3 mb-4">
-                  <Avatar className="h-6 w-6 mr-2 bg-blue-100 flex-shrink-0">
-                    <Bot className="h-4 w-4 text-blue-600" />
+                  <Avatar className="h-6 w-6 mr-2 bg-primary/15 flex-shrink-0">
+                    <Bot className="h-4 w-4 text-primary" />
                   </Avatar>
                   <div className="rounded-lg p-3 max-w-[80%] bg-white border shadow animate-pulse">
                     <p className="text-sm">Pensando...</p>

@@ -154,7 +154,7 @@ export const SharedBadge = ({ isShared, permission, sharedCount }: SharedBadgePr
   if (!isShared) return null;
 
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+    <span className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-primary/15 text-primary">
       <Share2 className="w-3 h-3" />
       {sharedCount ? `${sharedCount} ${sharedCount === 1 ? 'pessoa' : 'pessoas'}` : 'Compartilhado'}
       {permission && ` • ${permission === 'edit' ? 'Edição' : 'Visualização'}`}
@@ -180,7 +180,7 @@ export const ShareStatusIndicator = ({ userId, budgetId }: ShareStatusIndicatorP
   if (sharesForBudget.length === 0) return null;
 
   return (
-    <div className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400">
+    <div className="flex items-center gap-1 text-xs text-muted-foreground">
       <Share2 className="w-3 h-3" />
       <span>{sharesForBudget.length}</span>
     </div>

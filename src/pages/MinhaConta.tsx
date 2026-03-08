@@ -173,19 +173,19 @@ const MinhaConta = () => {
 
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       <Header />
       
       <main className="p-4">
         <div className="max-w-3xl mx-auto grid gap-8">
           
           {/* Seção de Minha Conta */}
-          <div className="bg-white p-6 rounded-lg shadow-md">
+          <div className="bg-card p-6 rounded-lg shadow-md border">
             <h1 className="text-2xl font-bold mb-6">Minha Conta</h1>
             
             <div className="mb-6">
-              <p className="text-gray-600">Email: {user?.email}</p>
-              <p className="text-gray-600">Último login: {user?.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString() : 'N/A'}</p>
+              <p className="text-muted-foreground">Email: {user?.email}</p>
+              <p className="text-muted-foreground">Último login: {user?.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString() : 'N/A'}</p>
             </div>
             
             <form onSubmit={atualizarPerfil} className="space-y-4">
@@ -235,13 +235,13 @@ const MinhaConta = () => {
           </div>
 
           {/* Seção de Integrações */}
-          <div className="bg-white p-6 rounded-lg shadow-md">
+          <div className="bg-card p-6 rounded-lg shadow-md border">
             <h1 className="text-2xl font-bold mb-4">Integrações</h1>
             
             <div className="space-y-4">
                 <h2 className="text-lg font-semibold">Telegram Bot</h2>
                 {isLoadingIntegrations ? (
-                    <div className="flex items-center text-gray-500">
+                    <div className="flex items-center text-muted-foreground">
                         <Loader2 className="mr-2 h-4 w-4 animate-spin"/>
                         Carregando informações...
                     </div>
@@ -264,7 +264,7 @@ const MinhaConta = () => {
                                     ))}
                                 </SelectContent>
                             </Select>
-                             <p className="text-xs text-gray-500 mt-1">As transações criadas pelo bot serão adicionadas a este orçamento.</p>
+                             <p className="text-xs text-muted-foreground mt-1">As transações criadas pelo bot serão adicionadas a este orçamento.</p>
                         </div>
 
                         <div className="flex flex-col sm:flex-row gap-2">
@@ -280,7 +280,7 @@ const MinhaConta = () => {
                     </div>
                 ) : (
                     <div className="space-y-3">
-                        <p className="text-gray-600">Vincule sua conta ao nosso bot do Telegram para lançar transações rapidamente usando mensagens de texto.</p>
+                        <p className="text-muted-foreground">Vincule sua conta ao nosso bot do Telegram para lançar transações rapidamente usando mensagens de texto.</p>
                         <Button asChild>
                            <a 
                              href={`https://t.me/${TELEGRAM_BOT_USERNAME}?start=${user?.id}`}
@@ -291,7 +291,7 @@ const MinhaConta = () => {
                             Vincular com Telegram
                            </a>
                         </Button>
-                        <p className="text-xs text-gray-500">Você será redirecionado para o Telegram para iniciar uma conversa com o bot e completar a vinculação.</p>
+                        <p className="text-xs text-muted-foreground">Você será redirecionado para o Telegram para iniciar uma conversa com o bot e completar a vinculação.</p>
                     </div>
                 )}
             </div>

@@ -311,7 +311,7 @@ export function ProcessBankStatement({ budgetId }: ProcessBankStatementProps) {
       <div className="space-y-2">
         <Label htmlFor="statement-upload">Selecione a imagem do extrato:</Label>
         <Input id="statement-upload" type="file" accept="image/*" onChange={handleFileChange} disabled={isProcessingAI || isSaving} />
-        {selectedFile && <p className="text-sm text-gray-500">Arquivo: {selectedFile.name}</p>}
+        {selectedFile && <p className="text-sm text-muted-foreground">Arquivo: {selectedFile.name}</p>}
       </div>
 
       {imagePreview && (
@@ -347,14 +347,14 @@ export function ProcessBankStatement({ budgetId }: ProcessBankStatementProps) {
               </TableHeader>
               <TableBody>
                 {extractedTransactions.map((t) => (
-                  <TableRow key={t.id} className={!t.is_valid ? 'bg-red-50 hover:bg-red-100' : (t.selected_for_import ? 'bg-green-50 hover:bg-green-100' : 'hover:bg-gray-50')}>
+                  <TableRow key={t.id} className={!t.is_valid ? 'bg-red-50 hover:bg-red-100' : (t.selected_for_import ? 'bg-green-50 hover:bg-green-100' : 'hover:bg-muted/50')}>
                     <TableCell>
                       <input 
                         type="checkbox"
                         checked={t.selected_for_import}
                         onChange={() => toggleSelectTransaction(t.id)}
                         disabled={!t.is_valid || isSaving}
-                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                        className="h-4 w-4 rounded border text-primary focus:ring-primary"
                       />
                     </TableCell>
                     <TableCell>

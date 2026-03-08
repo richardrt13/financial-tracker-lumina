@@ -9,6 +9,13 @@ import { startOfMonth, endOfMonth } from "date-fns";
 
 import { FilterControls } from './ui/FilterControls';
 import { SummaryCards } from './ui/SummaryCards';
+import { HealthScore } from './ui/HealthScore';
+import { MonthlyTrendChart } from './ui/MonthlyTrendChart';
+import { CategoryBreakdownChart } from './ui/CategoryBreakdownChart';
+import { CashFlowChart } from './ui/CashFlowChart';
+import { ProactiveInsights } from './ui/ProactiveInsights';
+import { CategoryLimits } from './ui/CategoryLimits';
+import { PredictiveBudget } from './ui/PredictiveBudget';
 import { TransactionDetailsDialog } from './dialogs/TransactionDetailsDialog';
 import { EditTransactionDialog } from './dialogs/EditTransactionDialog';
 import { DeleteTransactionDialog } from './dialogs/DeleteTransactionDialog';
@@ -131,29 +138,36 @@ export function Dashboard({ budgetId }: DashboardProps) {
       });
   }, [checkSupabaseConnection]);
 
-  // Memoize the selected type transactions to avoid unnecessary recalculations
   const selectedTypeTransactions = useMemo(() => {
     return selectedType ? transactionsData[selectedType] : [];
   }, [selectedType, transactionsData]);
 
+  const allCurrentTransactions = useMemo(() => {
+    return [
+      ...transactionsData.receita,
+      ...transactionsData.despesa,
+      ...transactionsData.investimento,
+    ];
+  }, [transactionsData]);
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+    <div className="space-y-5">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Dashboard Financeiro</h2>
-          <p className="text-muted-foreground">
+          <h2 className="text-xl font-bold tracking-tight">Dashboard Financeiro</h2>
+          <p className="text-sm text-muted-foreground">
              Visão geral das suas finanças
           </p>
         </div>
-        <div className="flex items-center gap-2 w-full sm:w-auto mt-4 sm:mt-0">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
             <Button
               variant="outline"
               size="sm"
-              className="gap-1.5"
+              className="gap-1.5 h-9"
               onClick={() => setIsBatchDialogOpen(true)}
             >
-              <ListChecks className="h-4 w-4" />
-              <span className="hidden sm:inline">Gestão em Lote</span>
+              <ListChecks className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline text-xs">Gestão em Lote</span>
             </Button>
             <FilterControls 
             dateRange={dateRange}
@@ -163,16 +177,58 @@ export function Dashboard({ budgetId }: DashboardProps) {
       </div>
 
       {isLoading && !isProcessing ? (
-        <div className="flex justify-center items-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+        <div className="flex flex-col items-center justify-center h-64 gap-3">
+          <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          </div>
+          <p className="text-sm text-muted-foreground">Carregando dados...</p>
         </div>
       ) : (
-        <SummaryCards
-          summaryData={summaryData}
-          completionData={completionData}
-          onCardClick={handleCardClick}
-          valuesVisible={valuesVisible}
-        />
+        <div className="space-y-5 animate-fade-in">
+          <ProactiveInsights
+            summaryData={summaryData}
+            completionData={completionData}
+            transactions={allCurrentTransactions}
+            allTransactions={allTransactionsHistory}
+          />
+
+          <div className="grid grid-cols-1 xl:grid-cols-[260px_1fr] gap-3">
+            <HealthScore
+              summaryData={summaryData}
+              completionData={completionData}
+              allTransactions={allCurrentTransactions}
+              budgetId={budgetId}
+              userId={userId}
+            />
+            <SummaryCards
+              summaryData={summaryData}
+              completionData={completionData}
+              onCardClick={handleCardClick}
+              valuesVisible={valuesVisible}
+              allTransactions={allTransactionsHistory}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <MonthlyTrendChart allTransactions={allTransactionsHistory} />
+            <CategoryBreakdownChart transactions={allCurrentTransactions} />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <CashFlowChart transactions={allCurrentTransactions} />
+            <PredictiveBudget
+              summaryData={summaryData}
+              allTransactions={allTransactionsHistory}
+            />
+            {userId && (
+              <CategoryLimits
+                budgetId={budgetId}
+                userId={userId}
+                transactions={allCurrentTransactions}
+              />
+            )}
+          </div>
+        </div>
       )}
 
       <TransactionDetailsDialog
@@ -180,7 +236,7 @@ export function Dashboard({ budgetId }: DashboardProps) {
         onOpenChange={setIsDialogOpen}
         selectedType={selectedType}
         transactions={selectedTypeTransactions}
-        dateRange={dateRange} // Update prop
+        dateRange={dateRange}
         onEditClick={handleEditDialogTransition}
         onDeleteClick={handleDeleteDialogTransition}
         onToggleStatus={toggleTransactionStatus}
@@ -224,7 +280,6 @@ export function Dashboard({ budgetId }: DashboardProps) {
         onDataChanged={handleBatchDataChanged}
       />
 
-      {/* Assistente Financeiro Inteligente V2 */}
       <FinancialAssistantChatV2 />
     </div>
   );

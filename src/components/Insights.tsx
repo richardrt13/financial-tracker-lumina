@@ -65,7 +65,7 @@ export function Insights({ selectedYear, selectedMonth, summaryData, transaction
         <Button 
           onClick={generateInsights} 
           disabled={isLoading || !selectedYear || !selectedMonth}
-          className="bg-blue-600 hover:bg-blue-700 text-white"
+          className="bg-primary hover:bg-primary text-white"
         >
           {isLoading ? (
             <>
@@ -79,13 +79,13 @@ export function Insights({ selectedYear, selectedMonth, summaryData, transaction
       </div>
       
       {insights ? (
-        <div className="text-gray-700 mt-4 p-4 bg-gray-50 rounded-md">
+        <div className="text-foreground mt-4 p-4 bg-muted/50 rounded-md">
           {insights.split('\n').map((line, index) => (
             <p key={index} className="mb-2">{line}</p>
           ))}
         </div>
       ) : (
-        <p className="text-gray-500 italic">
+        <p className="text-muted-foreground italic">
           Clique no botão para gerar insights sobre seus dados financeiros.
         </p>
       )}
