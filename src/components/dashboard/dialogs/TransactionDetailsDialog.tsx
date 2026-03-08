@@ -70,7 +70,7 @@ export function TransactionDetailsDialog({
               valuesVisible={valuesVisible} 
             />
           ) : (
-            <p className="text-center text-gray-500 py-8">Nenhuma transação encontrada.</p>
+            <p className="text-center text-muted-foreground py-8">Nenhuma transação encontrada.</p>
           )}
         </div>
       </DialogContent>

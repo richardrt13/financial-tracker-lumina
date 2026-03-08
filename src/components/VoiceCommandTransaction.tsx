@@ -465,7 +465,7 @@ export function VoiceCommandTransaction({
     <div className="space-y-4">
       <div className="flex flex-col space-y-2">
         <h3 className="text-lg font-medium">Adicionar Transação por Voz (via IA)</h3>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-muted-foreground">
           Clique em "Iniciar gravação" e diga seu comando. Ex: "Despesa de supermercado 120 reais para hoje".
         </p>
       </div>
@@ -504,7 +504,7 @@ export function VoiceCommandTransaction({
       {isListening && (
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <div className={`w-3 h-3 rounded-full ${currentlyListening ? 'bg-red-500 animate-pulse' : 'bg-gray-300'}`}></div>
+            <div className={`w-3 h-3 rounded-full ${currentlyListening ? 'bg-red-500 animate-pulse' : 'bg-muted'}`}></div>
             <span className="text-sm">{currentlyListening ? "Ouvindo..." : (transcript ? "Processando silêncio..." : "Aguardando fala...")}</span>
           </div>
           <Progress value={audioLevel} className="h-2" />
@@ -518,23 +518,23 @@ export function VoiceCommandTransaction({
       )}
       
       {transcript && (
-        <div className="p-4 bg-gray-100 rounded-md text-sm mt-2">
-          <p className="font-medium text-xs text-gray-500 mb-1">Comando detectado:</p>
-          <p className="italic text-gray-800">"{transcript}"</p>
+        <div className="p-4 bg-muted rounded-md text-sm mt-2">
+          <p className="font-medium text-xs text-muted-foreground mb-1">Comando detectado:</p>
+          <p className="italic text-foreground">"{transcript}"</p>
         </div>
       )}
       
       {isListening && !transcript && !errorMessage && (
-        <div className="p-4 bg-blue-50 text-sm rounded-md mt-2">
+        <div className="p-4 bg-primary/10 text-sm rounded-md mt-2">
           <p className="font-medium">Exemplos de comandos:</p>
           <div className="space-y-2 mt-2">
-            <p className="italic text-blue-700">
+            <p className="italic text-primary">
               "Adicionar despesa de alimentação de 85 reais e 50 centavos para junho"
             </p>
-            <p className="italic text-blue-700">
+            <p className="italic text-primary">
               "Receita de salário de 2500 reais em janeiro de 2025"
             </p>
-            <p className="italic text-blue-700">
+            <p className="italic text-primary">
               "Investimento em ações de 300 reais recorrente durante 5 meses para o dia 20"
             </p>
           </div>
@@ -542,7 +542,7 @@ export function VoiceCommandTransaction({
       )}
       
       {isProcessing && (
-        <div className="flex items-center gap-2 text-sm text-gray-500">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           Processando transação com assistente...
         </div>

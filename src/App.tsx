@@ -7,19 +7,23 @@ import { useEffect, useState, memo, ReactNode } from "react";
 import { supabase } from "./lib/supabase";
 import { User, Session } from "@supabase/supabase-js";
 import { AuthProvider } from "./contexts/AuthContext";
+import { ThemeProvider } from "./contexts/ThemeContext";
+import { BottomNav } from "./components/BottomNav";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
 import MinhaConta from "./pages/MinhaConta";
 import Configuracoes from "./pages/Configuracoes";
+import Analytics from "./pages/Analytics";
+import Metas from "./pages/Metas";
+import Calendario from "./pages/Calendario";
 
-// Configure QueryClient with better defaults
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5, // 5 minutes
-      gcTime: 1000 * 60 * 10, // 10 minutes (formerly cacheTime)
+      staleTime: 1000 * 60 * 5,
+      gcTime: 1000 * 60 * 10,
       refetchOnWindowFocus: false,
       retry: 1,
     },
@@ -35,13 +39,11 @@ function PrivateRoute({ children }: PrivateRouteProps) {
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    // Check initial session
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
       setSession(!!session);
       setUser(session?.user ?? null);
     });
 
-    // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event: string, session: Session | null) => {
@@ -52,61 +54,44 @@ function PrivateRoute({ children }: PrivateRouteProps) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Loading state
-  if (session === null) {
-    return null;
-  }
+  if (session === null) return null;
 
   return session ? (
     <AuthProvider user={user}>
-      {children}
+      <div className="pb-16 md:pb-0">
+        {children}
+      </div>
+      <BottomNav />
     </AuthProvider>
   ) : (
     <Navigate to="/login" replace />
   );
 }
 
-// Memoize PrivateRoute to avoid unnecessary re-renders
 const MemoizedPrivateRoute = memo(PrivateRoute);
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route
-            path="/"
-            element={
-              <MemoizedPrivateRoute>
-                <Index />
-              </MemoizedPrivateRoute>
-            }
-          />
-          <Route
-            path="/minha-conta"
-            element={
-              <MemoizedPrivateRoute>
-                <MinhaConta />
-              </MemoizedPrivateRoute>
-            }
-          />
-          <Route
-            path="/configuracoes"
-            element={
-              <MemoizedPrivateRoute>
-                <Configuracoes />
-              </MemoizedPrivateRoute>
-            }
-          />
-          <Route path="/login" element={<Login />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+  <ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<MemoizedPrivateRoute><Index /></MemoizedPrivateRoute>} />
+            <Route path="/analytics" element={<MemoizedPrivateRoute><Analytics /></MemoizedPrivateRoute>} />
+            <Route path="/metas" element={<MemoizedPrivateRoute><Metas /></MemoizedPrivateRoute>} />
+            <Route path="/calendario" element={<MemoizedPrivateRoute><Calendario /></MemoizedPrivateRoute>} />
+            <Route path="/minha-conta" element={<MemoizedPrivateRoute><MinhaConta /></MemoizedPrivateRoute>} />
+            <Route path="/configuracoes" element={<MemoizedPrivateRoute><Configuracoes /></MemoizedPrivateRoute>} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  </ThemeProvider>
 );
 
 export default App;

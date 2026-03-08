@@ -75,7 +75,7 @@ const TYPE_LABELS: Record<string, string> = {
 const TYPE_COLORS: Record<string, string> = {
   receita: 'text-green-700 bg-green-50 border-green-200',
   despesa: 'text-red-700 bg-red-50 border-red-200',
-  investimento: 'text-blue-700 bg-blue-50 border-blue-200',
+  investimento: 'text-primary bg-primary/10 border',
 };
 
 function getRecurringKey(t: Transaction): string {
@@ -316,10 +316,10 @@ export function BatchManagementDialog({
   }, [selectedIds, filteredIds, budgetId, onDataChanged]);
 
   const renderSortIcon = (field: SortField) => {
-    if (sortField !== field) return <ArrowUpDown className="ml-1 h-3 w-3 text-gray-400" />;
+    if (sortField !== field) return <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground" />;
     return sortDirection === 'asc'
-      ? <ArrowUp className="ml-1 h-3 w-3 text-blue-500" />
-      : <ArrowDown className="ml-1 h-3 w-3 text-blue-500" />;
+      ? <ArrowUp className="ml-1 h-3 w-3 text-primary" />
+      : <ArrowDown className="ml-1 h-3 w-3 text-primary" />;
   };
 
   const formatTransactionDate = (t: Transaction) => {
@@ -351,7 +351,7 @@ export function BatchManagementDialog({
           <div className="px-6 py-3 border-b space-y-3">
             <div className="flex flex-wrap gap-2 items-center">
               <div className="relative flex-1 min-w-[200px]">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Buscar por descrição ou categoria..."
                   value={searchQuery}
@@ -403,7 +403,7 @@ export function BatchManagementDialog({
               </TooltipProvider>
             </div>
 
-            <div className="flex items-center justify-between text-xs text-gray-500">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>{filteredTransactions.length} transaç{filteredTransactions.length === 1 ? 'ão' : 'ões'} encontrada{filteredTransactions.length === 1 ? '' : 's'}</span>
               {activeSelectedCount > 0 && (
                 <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setSelectedIds(new Set())}>
@@ -426,32 +426,32 @@ export function BatchManagementDialog({
                     />
                   </TableHead>
                   <TableHead>
-                    <button onClick={() => toggleSort('description')} className="flex items-center hover:text-blue-600">
+                    <button onClick={() => toggleSort('description')} className="flex items-center hover:text-primary">
                       Descrição {renderSortIcon('description')}
                     </button>
                   </TableHead>
                   <TableHead className="hidden md:table-cell">
-                    <button onClick={() => toggleSort('category')} className="flex items-center hover:text-blue-600">
+                    <button onClick={() => toggleSort('category')} className="flex items-center hover:text-primary">
                       Categoria {renderSortIcon('category')}
                     </button>
                   </TableHead>
                   <TableHead className="hidden sm:table-cell">
-                    <button onClick={() => toggleSort('type')} className="flex items-center hover:text-blue-600">
+                    <button onClick={() => toggleSort('type')} className="flex items-center hover:text-primary">
                       Tipo {renderSortIcon('type')}
                     </button>
                   </TableHead>
                   <TableHead>
-                    <button onClick={() => toggleSort('amount')} className="flex items-center hover:text-blue-600">
+                    <button onClick={() => toggleSort('amount')} className="flex items-center hover:text-primary">
                       Valor {renderSortIcon('amount')}
                     </button>
                   </TableHead>
                   <TableHead className="hidden lg:table-cell">
-                    <button onClick={() => toggleSort('date')} className="flex items-center hover:text-blue-600">
+                    <button onClick={() => toggleSort('date')} className="flex items-center hover:text-primary">
                       Data {renderSortIcon('date')}
                     </button>
                   </TableHead>
                   <TableHead className="hidden lg:table-cell">
-                    <button onClick={() => toggleSort('due_day')} className="flex items-center hover:text-blue-600">
+                    <button onClick={() => toggleSort('due_day')} className="flex items-center hover:text-primary">
                       Venc. {renderSortIcon('due_day')}
                     </button>
                   </TableHead>
@@ -461,7 +461,7 @@ export function BatchManagementDialog({
               <TableBody>
                 {filteredTransactions.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-gray-500 py-12">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground py-12">
                       Nenhuma transação encontrada com os filtros atuais.
                     </TableCell>
                   </TableRow>
@@ -474,7 +474,7 @@ export function BatchManagementDialog({
                       <TableRow
                         key={t.id}
                         data-state={isSelected ? 'selected' : undefined}
-                        className={isSelected ? 'bg-blue-50/60' : ''}
+                        className={isSelected ? 'bg-primary/10' : ''}
                       >
                         <TableCell>
                           <Checkbox
@@ -506,9 +506,9 @@ export function BatchManagementDialog({
                               </TooltipProvider>
                             )}
                           </div>
-                          <span className="text-xs text-gray-500 md:hidden">{t.category}</span>
+                          <span className="text-xs text-muted-foreground md:hidden">{t.category}</span>
                         </TableCell>
-                        <TableCell className="hidden md:table-cell text-sm text-gray-600">
+                        <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                           {t.category}
                         </TableCell>
                         <TableCell className="hidden sm:table-cell">
@@ -519,22 +519,22 @@ export function BatchManagementDialog({
                         <TableCell className="text-sm font-medium tabular-nums">
                           <span className={
                             t.type === 'receita' ? 'text-green-600' :
-                            t.type === 'despesa' ? 'text-red-600' : 'text-blue-600'
+                            t.type === 'despesa' ? 'text-red-600' : 'text-primary'
                           }>
                             {t.type === 'receita' ? '+' : '-'} R$ {formatCurrency(t.amount)}
                           </span>
                         </TableCell>
-                        <TableCell className="hidden lg:table-cell text-sm text-gray-600">
+                        <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
                           {formatTransactionDate(t)}
                         </TableCell>
-                        <TableCell className="hidden lg:table-cell text-sm text-gray-600">
+                        <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
                           {t.due_day ? `Dia ${t.due_day}` : '-'}
                         </TableCell>
                         <TableCell>
                           {t.is_completed ? (
                             <CheckCircle2 className="h-4 w-4 text-green-500" />
                           ) : (
-                            <Circle className="h-4 w-4 text-gray-300" />
+                            <Circle className="h-4 w-4 text-muted-foreground/50" />
                           )}
                         </TableCell>
                       </TableRow>
@@ -547,8 +547,8 @@ export function BatchManagementDialog({
 
           {/* Batch Toolbar */}
           {activeSelectedCount > 0 && (
-            <div className="border-t bg-gray-50 px-6 py-3 flex items-center justify-between gap-3 flex-wrap">
-              <span className="text-sm font-medium text-gray-700">
+            <div className="border-t bg-muted/50 px-6 py-3 flex items-center justify-between gap-3 flex-wrap">
+              <span className="text-sm font-medium text-foreground">
                 {activeSelectedCount} transaç{activeSelectedCount === 1 ? 'ão selecionada' : 'ões selecionadas'}
               </span>
               <div className="flex items-center gap-2 flex-wrap">

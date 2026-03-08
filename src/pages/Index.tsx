@@ -34,7 +34,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/components/ui/use-toast";
 import { Label } from "@/components/ui/label";
-import { ProcessBankStatement } from "@/components/ProcessBankStatement"; 
+import { ProcessBankStatement } from "@/components/ProcessBankStatement";
+import { Onboarding } from "@/components/Onboarding";
 
 type Budget = {
   id: string;
@@ -59,6 +60,8 @@ const Index = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [draggedOverItem, setDraggedOverItem] = useState<string | null>(null);
   
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  
   // Referência para rastrear se houve reordenação
   const reorderingOccurred = useRef(false);
   // Referência para o elemento fantasma temporário
@@ -74,6 +77,17 @@ const Index = () => {
       if (session?.user) {
         setUserId(session.user.id);
         await fetchBudgets(session.user.id);
+        
+        const onboardingDone = localStorage.getItem('spendly-onboarding-done');
+        if (!onboardingDone) {
+          const { count } = await supabase
+            .from('transactions')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', session.user.id);
+          if (count === 0 || count === null) {
+            setShowOnboarding(true);
+          }
+        }
       }
       setIsLoading(false);
     };
@@ -577,41 +591,51 @@ const Index = () => {
     };
   }, []);
 
-  // Exibir mensagem de carregamento enquanto verifica o usuário
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p>Carregando...</p>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4 animate-fade-in">
+          <svg viewBox="0 0 40 40" fill="none" className="w-12 h-12 animate-bounce-gentle">
+            <rect width="40" height="40" rx="12" fill="hsl(var(--primary))" />
+            <path d="M20 8C20 8 13 15 13 22C13 25.9 16.1 29 20 29C23.9 29 27 25.9 27 22C27 15 20 8 20 8Z" fill="white" opacity="0.9" />
+          </svg>
+          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Carregando...</p>
+        </div>
       </div>
     );
   }
 
-  
-
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
+      {showOnboarding && (
+        <Onboarding
+          onComplete={() => {
+            setShowOnboarding(false);
+            localStorage.setItem('spendly-onboarding-done', 'true');
+          }}
+        />
+      )}
       <Header />
       
-      <main className="p-4">
-        <div className="max-w-7xl mx-auto space-y-8">
+      <main className="p-4 sm:p-6">
+        <div className="max-w-7xl mx-auto space-y-6 animate-fade-in">
 
-          {/* Convites Pendentes */}
           {userId && <PendingInvites userId={userId} />}
 
-          {/* Seletor de orçamento */}
-          <div className="bg-white p-4 rounded-lg shadow-md">
+          {/* Budget selector */}
+          <div className="bg-card p-4 rounded-xl border">
             <div className="flex items-end gap-2">
               <div className="flex-1">
-                {/* Alterado de <label> para <Label> para consistência, assumindo importação de ui/label */}
-                <Label htmlFor="budget-select" className="block text-sm font-medium mb-1">
+                <Label htmlFor="budget-select" className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">
                   Orçamento Ativo
                 </Label>
                 <Select 
                   value={selectedBudgetId || ''} 
                   onValueChange={(value) => setSelectedBudgetId(value === '' ? null : value)}
-                  disabled={budgets.length === 0 && !isLoading} // Desabilitar se não houver orçamentos e não estiver carregando
+                  disabled={budgets.length === 0 && !isLoading}
                 >
-                  <SelectTrigger id="budget-select" disabled={isLoading && budgets.length === 0}>
+                  <SelectTrigger id="budget-select" className="h-10" disabled={isLoading && budgets.length === 0}>
                     <SelectValue placeholder={isLoading && budgets.length === 0 ? "Carregando orçamentos..." : (budgets.length === 0 ? "Crie um orçamento para começar" : "Selecione um orçamento")} />
                   </SelectTrigger>
                   <SelectContent>
@@ -626,6 +650,7 @@ const Index = () => {
               <Button
                 variant="outline"
                 size="icon"
+                className="h-10 w-10 shrink-0"
                 onClick={() => setIsNewBudgetDialogOpen(true)}
                 title="Adicionar novo orçamento"
               >
@@ -634,13 +659,13 @@ const Index = () => {
               <Button
                 variant="outline"
                 size="icon"
+                className="h-10 w-10 shrink-0"
                 onClick={() => setIsManageBudgetsDialogOpen(true)}
                 title="Gerenciar orçamentos"
-                disabled={budgets.length === 0 || isLoading} // Desabilitar se não houver orçamentos ou estiver carregando
+                disabled={budgets.length === 0 || isLoading}
               >
                 <Settings className="h-4 w-4" />
               </Button>
-              {/* Botão de Compartilhar */}
               {selectedBudgetId && userId && budgets.find(b => b.id === selectedBudgetId) && (
                 <BudgetSharingDialog 
                   budget={budgets.find(b => b.id === selectedBudgetId)!} 
@@ -650,40 +675,36 @@ const Index = () => {
             </div>
           </div>
           
-          {/* NOVA SEÇÃO PARA IMPORTAR EXTRATO BANCÁRIO */}
-          {selectedBudgetId && !isLoading && ( // Mostrar apenas se um orçamento estiver selecionado e não estiver carregando orçamentos
-            <div className="bg-white p-6 rounded-lg shadow-md">
+          {selectedBudgetId && !isLoading && (
+            <div className="bg-card p-5 rounded-xl border animate-fade-in">
                <ProcessBankStatement budgetId={selectedBudgetId} />
             </div>
           )}
           
-          {/* Layout principal: Formulário de Transação e Dashboard */}
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr] gap-8 items-start">
-            {/* Coluna do Formulário de Transação (sticky) */}
-            <div className="bg-white p-6 rounded-lg shadow-md lg:sticky lg:top-4">
-              <h2 className="text-xl font-semibold mb-4">Nova Transação</h2>
-              {isLoading && !selectedBudgetId ? ( // Se estiver carregando e nenhum orçamento selecionado
-                <div className="flex items-center text-gray-500">
+          {/* Main layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr] gap-6 items-start">
+            <div className="bg-card p-5 rounded-xl border lg:sticky lg:top-20 animate-fade-in">
+              <h2 className="text-base font-semibold mb-4 tracking-tight">Nova Transação</h2>
+              {isLoading && !selectedBudgetId ? (
+                <div className="flex items-center text-muted-foreground text-sm">
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Carregando orçamentos...
                 </div>
-              ) : !selectedBudgetId ? ( // Se não estiver carregando e nenhum orçamento selecionado
-                <p className="text-gray-500">Selecione ou crie um orçamento para adicionar transações.</p>
-              ) : ( // Se houver um orçamento selecionado (e não estiver carregando orçamentos)
+              ) : !selectedBudgetId ? (
+                <p className="text-muted-foreground text-sm">Selecione ou crie um orçamento para adicionar transações.</p>
+              ) : (
                 <TransactionForm budgetId={selectedBudgetId} />
               )}
             </div>
             
-            {/* Coluna do Dashboard */}
-            <div className="bg-white p-6 rounded-lg shadow-md">
-              <h2 className="text-xl font-semibold mb-4">Visão Geral do Orçamento</h2>
-               {isLoading && !selectedBudgetId ? (
-                <div className="flex items-center text-gray-500">
+            <div className="bg-card p-5 rounded-xl border animate-fade-in" style={{ animationDelay: '0.1s' }}>
+              {isLoading && !selectedBudgetId ? (
+                <div className="flex items-center text-muted-foreground text-sm">
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Carregando dados do orçamento...
                 </div>
               ) : !selectedBudgetId ? (
-                 <p className="text-gray-500">Selecione ou crie um orçamento para visualizar o dashboard.</p>
+                <p className="text-muted-foreground text-sm">Selecione ou crie um orçamento para visualizar o dashboard.</p>
               ) : (
                 <Dashboard budgetId={selectedBudgetId} />
               )}
@@ -728,7 +749,7 @@ const Index = () => {
           </DialogHeader>
           <div className="py-4">
             {budgets.length === 0 && !isLoading ? (
-                <p className="text-sm text-gray-500 text-center">Nenhum orçamento encontrado. Crie um novo.</p>
+                <p className="text-sm text-muted-foreground text-center">Nenhum orçamento encontrado. Crie um novo.</p>
             ) : (
                 <ul 
                 className="space-y-2"
@@ -737,9 +758,9 @@ const Index = () => {
                 {budgets.map((budget) => (
                     <li 
                     key={budget.id}
-                    className={`flex items-center justify-between p-2 border rounded cursor-move budget-item
+                    className={`flex items-center justify-between p-2.5 border rounded-lg cursor-move budget-item transition-colors
                         ${draggedItem?.id === budget.id ? 'dragging' : ''}
-                        ${draggedOverItem === budget.id ? 'border-blue-500 bg-blue-50' : ''}`}
+                        ${draggedOverItem === budget.id ? 'border-primary/50 bg-primary/5' : ''}`}
                     draggable="true"
                     onDragStart={(e) => handleDragStart(e, budget)}
                     onDragOver={(e) => handleDragOver(e, budget.id)}
@@ -749,7 +770,7 @@ const Index = () => {
                     onDrop={(e) => handleDrop(e, budget.id)}
                     >
                     <div className="flex items-center gap-2">
-                        <GripVertical className="h-4 w-4 text-gray-400" />
+                        <GripVertical className="h-4 w-4 text-muted-foreground" />
                         <span className="font-medium">{budget.name}</span>
                     </div>
                     <Button
@@ -761,7 +782,7 @@ const Index = () => {
                         confirmDeleteBudget(budget);
                         }}
                         title="Excluir orçamento"
-                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
                     >
                         <Trash2 className="h-4 w-4" />
                     </Button>
@@ -770,7 +791,7 @@ const Index = () => {
                 </ul>
             )}
             {budgets.length > 1 && (
-              <p className="mt-4 text-sm text-gray-500">
+              <p className="mt-4 text-sm text-muted-foreground">
                 Dica: Arraste e solte os itens para reordenar.
               </p>
             )}

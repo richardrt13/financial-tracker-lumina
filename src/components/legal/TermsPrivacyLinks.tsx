@@ -13,7 +13,7 @@ export const TermsPrivacyLinks = ({
   className = "",
 }: TermsPrivacyLinksProps) => {
   return (
-    <div className={`text-xs text-gray-500 ${className}`}>
+    <div className={`text-xs text-muted-foreground ${className}`}>
       Ao continuar, você concorda com nossos{" "}
       <button 
         onClick={onTermsClick}
