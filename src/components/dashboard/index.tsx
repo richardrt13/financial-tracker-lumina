@@ -206,6 +206,7 @@ export function Dashboard({ budgetId }: DashboardProps) {
               onCardClick={handleCardClick}
               valuesVisible={valuesVisible}
               allTransactions={allTransactionsHistory}
+              dateRange={dateRange}
             />
           </div>
 

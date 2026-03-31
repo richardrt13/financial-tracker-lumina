@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
-import { TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Wallet, CreditCard, PiggyBank, Scale } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, Wallet, CreditCard, PiggyBank, Scale } from 'lucide-react';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
+import { DateRange } from 'react-day-picker';
 import { Card, CardContent } from "@/components/ui/card";
 import { SummaryData, CompletionData, Transaction } from '../types';
 import { formatCurrency } from '../utils/formatters';
@@ -11,6 +12,8 @@ interface SummaryCardsProps {
   onCardClick: (type: string) => void;
   valuesVisible: boolean;
   allTransactions?: Transaction[];
+  /** Período do filtro: o spark e a tendência % usam o mês de término como referência (vs. mês anterior). */
+  dateRange?: DateRange | undefined;
 }
 
 const summaryCards = [
@@ -20,7 +23,11 @@ const summaryCards = [
   { title: "Saldo", type: "saldo", icon: Scale, sparkColor: "#f59e0b", iconBg: "bg-amber-100 dark:bg-amber-900/30", iconColor: "text-amber-600 dark:text-amber-400", valueColor: "text-amber-600 dark:text-amber-400" },
 ];
 
-function buildSparklineData(allTransactions: Transaction[], type: string): { value: number }[] {
+function buildSparklineData(
+  allTransactions: Transaction[],
+  type: string,
+  anchor: Date
+): { value: number }[] {
   const monthlyMap = new Map<string, number>();
   allTransactions.forEach(t => {
     if (!t.date) return;
@@ -34,7 +41,17 @@ function buildSparklineData(allTransactions: Transaction[], type: string): { val
       monthlyMap.set(key, (monthlyMap.get(key) || 0) + t.amount);
     }
   });
-  return Array.from(monthlyMap.entries()).sort(([a], [b]) => a.localeCompare(b)).slice(-6).map(([, value]) => ({ value: Math.round(value) }));
+
+  const endY = anchor.getFullYear();
+  const endM = anchor.getMonth();
+  const result: { value: number }[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(endY, endM - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const value = monthlyMap.get(key) || 0;
+    result.push({ value: Math.round(value) });
+  }
+  return result;
 }
 
 function calculateTrend(sparkData: { value: number }[]): { percentage: number; direction: 'up' | 'down' | 'stable' } {
@@ -53,16 +70,18 @@ export function SummaryCards({
   onCardClick,
   valuesVisible,
   allTransactions = [],
+  dateRange,
 }: SummaryCardsProps) {
   const sparklines = useMemo(() => {
     if (!allTransactions.length) return {};
+    const anchor = dateRange?.to ?? dateRange?.from ?? new Date();
     return {
-      receita: buildSparklineData(allTransactions, 'receita'),
-      despesa: buildSparklineData(allTransactions, 'despesa'),
-      investimento: buildSparklineData(allTransactions, 'investimento'),
-      saldo: buildSparklineData(allTransactions, 'saldo'),
+      receita: buildSparklineData(allTransactions, 'receita', anchor),
+      despesa: buildSparklineData(allTransactions, 'despesa', anchor),
+      investimento: buildSparklineData(allTransactions, 'investimento', anchor),
+      saldo: buildSparklineData(allTransactions, 'saldo', anchor),
     };
-  }, [allTransactions]);
+  }, [allTransactions, dateRange]);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 stagger-children">
